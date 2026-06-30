@@ -1,0 +1,12 @@
+shellEmulator: true
+
+trustPolicy: no-downgrade
+
+packages: []
+
+# 允許安裝期 build script（pnpm 預設封鎖）：
+# - esbuild → vitest（透過 vite）需要的原生 binary
+# - vue-demi → @directus/extensions-sdk 透過 vue 鏈帶入，postinstall 切換 Vue shim
+allowBuilds:
+  esbuild: true
+  vue-demi: true

@@ -1,0 +1,73 @@
+{
+  "name": "directus-typed-kit",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Schema-typed toolkit for building Directus hook & endpoint extensions",
+  "license": "MIT",
+  "author": "PoHsun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pohsun4work/directus-typed-kit.git"
+  },
+  "homepage": "https://github.com/pohsun4work/directus-typed-kit#readme",
+  "bugs": {
+    "url": "https://github.com/pohsun4work/directus-typed-kit/issues"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./hook": {
+      "types": "./dist/hook/index.d.mts",
+      "import": "./dist/hook/index.mjs"
+    },
+    "./endpoint": {
+      "types": "./dist/endpoint/index.d.mts",
+      "import": "./dist/endpoint/index.mjs"
+    },
+    "./adapters/ts-typegen": {
+      "types": "./dist/adapters/ts-typegen/index.d.mts",
+      "import": "./dist/adapters/ts-typegen/index.mjs"
+    },
+    "./adapters/generate-types": {
+      "types": "./dist/adapters/generate-types/index.d.mts",
+      "import": "./dist/adapters/generate-types/index.mjs"
+    }
+  },
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --typecheck",
+    "lint": "eslint --fix"
+  },
+  "peerDependencies": {
+    "@directus/errors": "^2.0.0",
+    "@directus/extensions-sdk": "^17.0.0",
+    "@directus/types": ">=13.0.0",
+    "knex": "^3.0.0"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^9.0.0",
+    "@directus/errors": "^2.3.1",
+    "@directus/extensions-sdk": "17.1.4",
+    "@directus/sdk": "^19.0.0",
+    "@directus/types": "^15.0.0",
+    "@standard-schema/spec": "^1.1.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^24.13.0",
+    "eslint": "^10.4.1",
+    "express": "^4.18.0",
+    "jiti": "^2.7.0",
+    "knex": "^3.1.0",
+    "tsdown": "^0.22.2",
+    "typescript": "~6.0.0",
+    "vitest": "^4.1.8"
+  }
+}
