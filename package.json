@@ -3,13 +3,13 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Schema-typed toolkit for building Directus hook & endpoint extensions",
-  "license": "MIT",
   "author": "PoHsun",
+  "license": "MIT",
+  "homepage": "https://github.com/pohsun4work/directus-typed-kit#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pohsun4work/directus-typed-kit.git"
   },
-  "homepage": "https://github.com/pohsun4work/directus-typed-kit#readme",
   "bugs": {
     "url": "https://github.com/pohsun4work/directus-typed-kit/issues"
   },
