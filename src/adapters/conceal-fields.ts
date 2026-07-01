@@ -1,5 +1,4 @@
-// 系統表的 conceal 欄位是 Directus 事實、與 generator 無關
-// 各適配器標 Concealed brand，core 再據 brand 分流
+// 系統表的 conceal 欄位是 Directus 事實、與 generator 無關，各適配器標 Concealed brand 供 core 分流
 // 來源：@directus/system-data 欄位定義（Directus special:['conceal']，讀出被遮成 '**********'）
 
 export interface ConcealedFieldMap {

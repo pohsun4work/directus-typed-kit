@@ -1,5 +1,5 @@
 // 兩個內建 FilterMiddleware（validate / definePermission）與套用器
-// middleware 陣列依書寫順序執行：reduceRight 把 index 0 套成最外層、最先跑（與 endpoint guards 同構）
+// 套用順序刻意對齊 endpoint guards（書寫順序＝執行順序），呼叫端心智模型一致
 
 import { ForbiddenError, ValidationError } from '../core/errors.js'
 import { runStandard } from '../schema/standard-schema.js'

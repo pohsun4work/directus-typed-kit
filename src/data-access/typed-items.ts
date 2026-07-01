@@ -4,11 +4,13 @@ import type { StripDate } from '../schema/dates.js'
 // 補原生 ItemsService 缺的兩塊型別：Query<Item> typed 輸入、ApplyFields fields→result 輸出推導
 // runtime 仍是原生 ItemsService，items() 以邊界 cast 成 TypedItemsService，不 subclass
 
-// 放寬成 object 而非 Record<string, Record<string, unknown>>：Schema 是 interface + Row[] 形狀，過不了「string index signature」與「值為物件」兩道約束
-// 真正 row 由 CollectionItem 解出
+/** 放寬成 object 而非 Record<string, Record<string, unknown>>\
+ *  Schema 是 interface + Row[] 形狀，過不了「string index signature」與「值為物件」兩道約束\
+ *  真正 row 由 CollectionItem 解出
+ */
 export type SchemaShape = object
 
-/** 取關聯欄位的物件型別（m2o / o2m 皆可）；非關聯 → never\
+/** 取關聯欄位的物件型別（m2o / o2m 皆可），非關聯得 never\
  *  排除可賦值給 string 者：branded string（日期 / conceal）型別上也是 object，不排除會被誤判成關聯
  */
 type RelObject<T> = T extends readonly (infer E)[]
@@ -20,7 +22,7 @@ type IsRelation<T> = [RelObject<T>] extends [never] ? false : true
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
 
 // fields→result 推導：fields 以 union 處理（tuple 經 const Q 取 [number]）
-// 支援直接欄位、一層點記關聯（rel.field / rel.*）、星號 '*' / '*.*' / '*.*.*'；不支援多級點記 a.b.c
+// 支援直接欄位、一層點記關聯（rel.field / rel.*）、星號最多三層，不支援多級點記 a.b.c
 
 /** 關聯前綴：F 中所有 `${R}.${...}` 的 R */
 type RelPrefix<F extends string> = F extends `${infer R}.${string}` ? R : never
@@ -39,11 +41,11 @@ type ApplyNested<T, F extends string>
  *  `[T] extends [...]` 非分配式：o2m `string[] | Row[]` 須整段判斷，否則 Row[] 那支算出 `never[]`
  */
 type FkOf<T> = [T] extends [readonly (infer E)[]] ? Exclude<E, object>[] : Exclude<T, object>
-// 非關聯欄位 strip 日期 brand：service read 各 temporal runtime 全回 string，型別據此對齊免使用端拿 brand 當 string
+/** service read 各 temporal runtime 全回 string，非關聯欄位 strip 日期 brand 對齊 runtime */
 type DirectField<Item, K extends keyof Item>
   = IsRelation<Item[K]> extends true ? FkOf<Item[K]> : StripDate<Item[K]>
 
-/** 直接欄位（不含點）；'*' 走預設讀取、明列關聯欄位同樣收 FK */
+/** 直接欄位（不含點），'*' 走預設讀取、明列關聯欄位同樣收 FK */
 type DirectPart<Item, F extends string>
   = '*' extends F ? DefaultRead<Item> : { [K in (F & keyof Item)]: DirectField<Item, K> }
 
@@ -52,11 +54,11 @@ type NestedPart<Item, F extends string> = {
   [R in (RelPrefix<F> & keyof Item & string)]: ApplyNested<Item[R], SubFields<F, R>>;
 }
 
-// 星號展開：'*'→Depth 0（關聯收 FK）、'*.*'→1、'*.*.*'→2；每深一層展開關聯 row 再 Depth-1
+// 星號展開深度：'*'→0（關聯收 FK）、'*.*'→1、'*.*.*'→2，每深一層展開關聯 row 再 Depth-1
 
 type Decr<N extends number> = N extends 2 ? 1 : 0
 
-/** 展開單一關聯欄位到指定深度（保留 o2m 陣列性與 m2o 的 null）；非分配式理由同 ApplyNested */
+/** 展開單一關聯欄位到指定深度（保留 o2m 陣列性與 m2o 的 null），非分配式理由同 ApplyNested */
 type ExpandRel<T, D extends number>
   = [T] extends [readonly (infer E)[]]
     ? ExpandAll<Extract<E, object>, D>[]
@@ -70,7 +72,7 @@ type ExpandAll<Item, D extends number>
       : StripDate<Item[K]>;
   }>
 
-/** 依 fields 內最深的星號決定展開深度；無 '*.*' 系列回 unknown（intersection 單位元，不貢獻欄位） */
+/** 依 fields 內最深的星號決定展開深度，無 '*.*' 系列回 unknown（intersection 單位元，不貢獻欄位） */
 type StarPart<Item, F extends string>
   = '*.*.*' extends F ? ExpandAll<Item, 2>
     : '*.*' extends F ? ExpandAll<Item, 1>
@@ -94,7 +96,7 @@ type FieldPath<Item>
         : never;
     }[keyof Item & string]
 
-/** 簡化版 filter operator（cover 常用；其餘可再補） */
+/** 簡化版 filter operator（cover 常用，其餘可再補） */
 interface FilterOperators<V> {
   _eq?: V;
   _neq?: V;
@@ -112,7 +114,7 @@ interface FilterOperators<V> {
   _ends_with?: string;
 }
 
-/** typed filter：欄位 → operator、_and / _or 組合；關聯可遞迴或直接比 FK/PK\
+/** typed filter：欄位 → operator、_and / _or 組合，關聯可遞迴或直接比 FK/PK\
  *  日期比較值套 StripDate 收純 string，呼叫端直接塞 ISO 字串、免外露日期 brand
  */
 export type Filter<Item>
@@ -138,7 +140,7 @@ export interface Query<Item> {
 /** 取某 collection 單筆 row：一般集合是 Row[]、singleton 是 Row，一律解成 Row */
 export type CollectionItem<S, C extends keyof S> = S[C] extends readonly (infer I)[] ? I : S[C]
 
-/** service 視角 row：移除 conceal 欄位（讀出非真值）；系統表完整欄位由 generator 適配器灌入，core 只依 brand 處理 */
+/** service 視角 row：移除 conceal 欄位（讀出非真值） */
 type ServiceRow<S, C extends keyof S> = OmitConcealed<CollectionItem<S, C>>
 
 /** 消費端可覆寫的型別槽（module augmentation），預設留空、各型別以 fallback 給預設 */
@@ -150,7 +152,7 @@ export interface KitTypes {}
  */
 export interface KitSchema {}
 
-/** 已註冊的 Schema；createHook / createEndpoint 泛型預設值（internal） */
+/** 已註冊的 Schema，createHook / createEndpoint 泛型預設值（internal） */
 export type RegisteredSchema = KitSchema extends { schema: infer S extends SchemaShape } ? S : SchemaShape
 
 /** collection 主鍵型別，預設 `string | number`（uuid 或自增整數）\
@@ -187,11 +189,11 @@ type WriteField<T> = IsRelation<T> extends true ? WriteRelation<T> : StripDate<T
 /** deep-write payload：欄位 optional、關聯收 FK 或巢狀 partial、日期脫成 string（呼叫端直接塞 ISO 字串） */
 export type WritePayload<Item> = Partial<{ [K in keyof Item]: WriteField<Item[K]> }>
 
-/** 依 fields 推結果；無 fields → 預設投影（關聯為 FK） */
+/** 依 fields 推結果，無 fields 時走預設投影（關聯為 FK） */
 type Read<Item, Q> = Q extends { fields: readonly (infer F extends string)[] } ? ApplyFields<Item, F> : DefaultRead<Item>
 
 /** 完整 typed 的 ItemsService（runtime 為原生實例的邊界 cast 目標）\
- *  const Q 保留 fields 字面量才能推精準結果；Key 由 Schema 的 id 欄位推導
+ *  const Q 保留 fields 字面量才能推精準結果，Key 由 Schema 的 id 欄位推導
  */
 export interface TypedItemsService<
   S extends SchemaShape,

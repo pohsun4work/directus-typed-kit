@@ -1,7 +1,6 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  // 每個對外子路徑各一個 entry，意義在 treeshake
   entry: [
     'src/index.ts',
     'src/hook/index.ts',

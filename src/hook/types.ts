@@ -1,5 +1,3 @@
-// hook domain 型別：事件 meta、各時序 handler、middleware、HookTools
-
 import type { Accountability, Logger } from '../core/types.js'
 import type { CollectionItem, SchemaShape, WritePayload } from '../data-access/typed-items.js'
 import type { DataAccess } from '../data-access/types.js'
@@ -12,7 +10,6 @@ type Collection<S extends SchemaShape> = keyof S & string
 export interface EventMeta {
   event: string;
   collection: string;
-  /** 正規化：一律 string[] */
   keys: string[];
 }
 export interface ActionMeta extends EventMeta {
@@ -24,9 +21,11 @@ export interface EventContext {
 
 // ============ handler ============
 
-// filter 在 PayloadService 收巢狀成 FK 之前觸發 → payload 即 createOne/updateOne 原始輸入
-// 故形狀同 WritePayload（關聯收 FK 或巢狀 partial、日期 string），非展開後的 read row
-/** before* 的 handler：自動 return（不回傳沿用原 payload） */
+/** before* 的 handler：自動 return（不回傳沿用原 payload）
+ *
+ * payload 形狀同 WritePayload（關聯收 FK 或巢狀 partial、日期 string），非展開後的 read row
+ * ── filter 在 PayloadService 收巢狀成 FK 之前觸發，拿到的是 createOne/updateOne 原始輸入
+ */
 export type FilterHandler<T> = (
   payload: WritePayload<T>,
   meta: EventMeta,
@@ -41,7 +40,7 @@ export type ActionHandler = (meta: ActionMeta, context: EventContext) => void | 
 
 // ============ middleware ============
 
-/** filter 中介層：包住 next、回傳新 handler；進 middleware 陣列依書寫順序執行 */
+/** filter 中介層：包住 next、回傳新 handler，進 middleware 陣列依書寫順序執行 */
 export type FilterMiddleware = <T>(next: FilterHandler<T>) => FilterHandler<T>
 
 export type PermissionCheck = (args: {
@@ -52,9 +51,10 @@ export type PermissionCheck = (args: {
 
 // ============ Hook tools ============
 
-// 各 init 時點 Directus 注入的 meta：app/routes/middlewares 系列拿 Express app
-// （唯一能在 router 掛載前插 middleware 的把手）；cli 系列拿 commander program
-// program 無對應 @types 故留 unknown，使用端自行 cast
+/** 各 init 時點 Directus 注入的 meta：app/routes/middlewares 系列拿 Express app
+ *  （唯一能在 router 掛載前插 middleware 的把手），cli 系列拿 commander program
+ *  program 無對應 @types 故留 unknown，使用端自行 cast
+ */
 export interface InitMetaMap {
   'app.before': { app: Application };
   'app.after': { app: Application };
@@ -72,12 +72,12 @@ export type InitEvent = keyof InitMetaMap
 
 // ============ route middleware mounting ============
 
-// 同 express PathParams；不直接 import（它在 express-serve-static-core、匯出位置脆弱）
+/** 同 express PathParams，不直接 import（它在 express-serve-static-core、匯出位置脆弱） */
 type RoutePath = string | RegExp | Array<string | RegExp>
 
-// routes.before 時點 authenticate 已跑、accountability 必有（內層 user 仍可 null）
+/** routes.before 時點 authenticate 已跑、accountability 必有（內層 user 仍可 null） */
 type AuthedRequest = Request & { accountability: Accountability }
-// routes.after 的 error handler 可能接到 authenticate 本身的失敗、那時從沒設過 → optional
+/** routes.after 的 error handler 可能接到 authenticate 本身的失敗、那時從沒設過 → optional */
 type MaybeAuthedRequest = Request & { accountability?: Accountability | null }
 
 type RouteGuard = (req: AuthedRequest, res: Response, next: NextFunction) => void | Promise<void>
@@ -98,7 +98,7 @@ export interface HookTools<S extends SchemaShape> extends DataAccess<S> {
   // 逃生口的純 middleware 對稱同 before*／after*：
   // filter 屬 before（可 throw 擋下）→ 純 gate 可省略 handler
   // action 屬 after（handler 即本體）→ 不提供 middleware-only
-  /** 逃生口：非 items / system 事件（read、auth.*、request.*、server.*…）保留全名 */
+  /** before / after 未覆蓋的事件（items.read、auth.*、request.*、server.*…）保留全名 */
   filter: ((event: string, handler: (payload: unknown, meta: EventMeta, ctx: EventContext) => unknown) => void) & ((event: string, middleware: FilterMiddleware[]) => void) & ((event: string, middleware: FilterMiddleware[], handler: (payload: unknown, meta: EventMeta, ctx: EventContext) => unknown) => void);
   action: ((event: string, handler: ActionHandler) => void) & ((event: string, middleware: FilterMiddleware[], handler: ActionHandler) => void);
 
@@ -106,14 +106,14 @@ export interface HookTools<S extends SchemaShape> extends DataAccess<S> {
   init: <E extends InitEvent>(event: E, handler: (meta: InitMetaMap[E]) => void) => void;
 
   // init('routes.before'/'routes.after', ({app}) => app.use(...)) 的常用包裝
-  // handler 型別由此釘死（req/res/next 不再吃 app.use 多載的浮動推斷）；其餘 init 時點用 init 逃生口
+  // handler 型別由此釘死（req/res/next 不再吃 app.use 多載的浮動推斷），其餘 init 時點用 init 逃生口
   /** routes.before：core 路由前掛 guard / 攔截（authenticate 下游、req.accountability 必有）
-   *  省略 path → app 全域；給 path → 只攔該前綴（如 '/files'，須對齊 Directus 核心路由）
+   *  省略 path → app 全域，給 path → 只攔該前綴（如 '/files'，須對齊 Directus 核心路由）
    */
   beforeRoutes: ((handler: RouteGuard) => void) & ((path: RoutePath, handler: RouteGuard) => void);
   /** routes.after：掛 error handler（上游 next(err) 時觸發）
    *  錯誤可能源於 authenticate 本身 → req.accountability 可能無（optional）
-   *  省略 path → app 全域；給 path → 只接該前綴的錯誤
+   *  省略 path → app 全域，給 path → 只接該前綴的錯誤
    *  404 fallback（一般 3 參數 terminal）罕用、不在此暴露，需要時走 init('routes.after')
    */
   afterRoutes: ((handler: RouteErrorHandler) => void) & ((path: RoutePath, handler: RouteErrorHandler) => void);

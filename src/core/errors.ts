@@ -1,6 +1,5 @@
-// 用 Directus 的 createError 才會轉成對應 HTTP 狀態碼
-// 直接 throw 一般 Error 會變成 500
-// guard / validate / filter 內 throw 這些實例後交由 Directus error handler 回對應狀態碼，kit 本身不攔
+// 必須用 Directus 的 createError 才會轉成對應 HTTP 狀態碼，直接 throw 一般 Error 會變 500
+// throw 後交由 Directus error handler 回狀態碼，kit 本身不攔
 
 import { createError } from '@directus/errors'
 
@@ -14,7 +13,7 @@ export const ValidationError = createError<{ issues: string[] }>(
   400,
 )
 
-/** response schema 驗證失敗 = server bug → 500（細節進 log，不外洩） */
+/** response schema 驗證失敗屬 server bug 回 500，細節進 log 不外洩 */
 export const ResponseValidationError = createError(
   'RESPONSE_VALIDATION_FAILED',
   'Response did not match the expected schema',
