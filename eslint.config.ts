@@ -2,10 +2,6 @@ import antfu from '@antfu/eslint-config'
 
 export default antfu(
   {
-    ignores: [
-      // 設計稿屬歷史記錄，非產品程式碼
-      'design/**',
-    ],
     rules: {
       'antfu/if-newline': 'off',
       'antfu/top-level-function': 'off',
@@ -61,11 +57,3 @@ export default antfu(
     },
   },
 )
-  // kit 已脫離 monorepo，自管所有依賴版本、無 catalog
-  // 關掉 enforce-catalog（而非設 warn）：否則 eslint --fix 會主動為 deps 生成 catalog，
-  // 把本套件硬拉回 catalog 模式；off 才能維持「無 catalog、各自 pin 版本」
-  .override('antfu/pnpm/package-json', {
-    rules: {
-      'pnpm/json-enforce-catalog': 'off',
-    },
-  })
