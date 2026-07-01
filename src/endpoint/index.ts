@@ -1,4 +1,4 @@
-// directus-kit/endpoint 入口：createEndpoint 工廠 + endpoint 專屬 runtime（body/query/params、reply、RAW）與型別
+// directus-typed-kit/endpoint 入口：createEndpoint 工廠 + endpoint 專屬 runtime（body/query/params、reply、RAW）與型別
 // 與 hook 入口拆開，讓只寫 endpoint 的 extension entry 不牽連 hook 的 runtime 圖（treeshake）
 
 import { defineEndpoint } from '@directus/extensions-sdk'

@@ -12,7 +12,7 @@ type Collection<S extends SchemaShape> = keyof S & string
 // 消費端覆寫某張表的 knex row 型別（module augmentation）
 // 系統表（directus_users / files…）完整型別由 generator 適配器灌進 Schema、走一般 Schema 路徑即 typed
 // 這裡留給「不在 Schema 的自訂 raw 表」
-//   declare module 'directus-kit' {
+//   declare module 'directus-typed-kit' {
 //     interface KnexOverrides { my_raw_table: { id: string, payload: unknown } }
 //   }
 export interface KnexOverrides {}

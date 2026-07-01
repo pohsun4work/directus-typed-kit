@@ -96,7 +96,7 @@ export function createDataAccess<S extends SchemaShape>(deps: DataAccessDeps): D
           if (SPECIAL_SERVICE_NAMES.has(key)) {
             const Ctor = injected[key] as (new (o: { knex: Knex; accountability: Accountability | null; schema: SchemaOverview }) => AnyMethods) | undefined
             if (!Ctor)
-              throw new Error(`directus-kit: Directus service "${key}" is not available in this context`)
+              throw new Error(`directus-typed-kit: Directus service "${key}" is not available in this context`)
             return new Ctor({ knex, accountability, schema })
           }
           return newItemsService(serviceKeyToCollection(key), schema, accountability)

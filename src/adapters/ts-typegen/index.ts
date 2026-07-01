@@ -2,7 +2,7 @@
 // 主檔做「版本 → 版本檔」對應、灌系統表、並 re-export 系統型別；版本檔 v*.ts 是各輸出結構世代的轉換
 //
 // 同時是 ts-typegen 產出的「相依出口」：把產出檔的 `import ... from "@directus/sdk"` 改指本適配器，
-// 即可拿掉消費端 tsconfig alias、免裝 @directus/sdk（產出檔所在套件本就相依 directus-kit）
+// 即可拿掉消費端 tsconfig alias、免裝 @directus/sdk（產出檔所在套件本就相依 directus-typed-kit）
 // 系統型別只在 @directus/sdk（@directus/types 沒有），在此 re-export；dts bundler 會 inline 進產物（dist 不殘留 sdk import）
 
 import type { BrandSystemRow, SystemCollectionName } from './system.js'

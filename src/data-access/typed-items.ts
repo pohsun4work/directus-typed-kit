@@ -145,7 +145,7 @@ type ServiceRow<S, C extends keyof S> = OmitConcealed<CollectionItem<S, C>>
 export interface KitTypes {}
 
 /** 註冊一次專案 Schema → createHook / createEndpoint 免逐次帶泛型\
- *  `declare module 'directus-kit' { interface KitSchema { schema: Schema } }`\
+ *  `declare module 'directus-typed-kit' { interface KitSchema { schema: Schema } }`\
  *  未註冊 → fallback SchemaShape → collection 收斂 never、呼叫即型別錯（逼補註冊，不靜默放寬）
  */
 export interface KitSchema {}

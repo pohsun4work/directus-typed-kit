@@ -1,4 +1,4 @@
-// directus-kit/hook 入口：createHook 工廠 + hook 專屬 runtime（validate / definePermission）與型別
+// directus-typed-kit/hook 入口：createHook 工廠 + hook 專屬 runtime（validate / definePermission）與型別
 // 與 endpoint 入口拆開，讓只寫 hook 的 extension entry 不牽連 endpoint 的 runtime 圖（treeshake）
 // runtime 100% 沿用原生 defineHook，只在 register callback 內把 tools 組好交給使用者
 

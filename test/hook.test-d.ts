@@ -1,17 +1,17 @@
 // hook domain 型別測試（vitest --typecheck）：KitSchema 註冊（createHook / createEndpoint 免帶泛型即推導）、
 // before* 省略 handler 的純 middleware gate 多載（after* 不提供）
 
-import { createEndpoint } from 'directus-kit/endpoint'
-import { createHook, definePermission } from 'directus-kit/hook'
+import { createEndpoint } from 'directus-typed-kit/endpoint'
+import { createHook, definePermission } from 'directus-typed-kit/hook'
 import { describe, expectTypeOf, it } from 'vitest'
 
 import type { Timestamp } from '../src/schema/dates.js'
-import type { Accountability, TypedItemsService } from 'directus-kit'
+import type { Accountability, TypedItemsService } from 'directus-typed-kit'
 import type { Application } from 'express'
 
 // KitSchema：註冊一次專案 Schema，驗證 createHook / createEndpoint 免帶泛型即推導
 // 此 augmentation 為全域、只能宣告一次，故收斂於 hook 測試（唯一用到註冊值的 domain）
-declare module 'directus-kit' {
+declare module 'directus-typed-kit' {
   interface KitSchema {
     schema: Schema;
   }

@@ -8,9 +8,9 @@ import type { InferOutput, StandardSchemaV1 } from '../schema/standard-schema.js
 import type { Guard, Reply } from './types.js'
 
 /** streaming 等需要自己寫 res 時，handler 回傳 RAW 告知 wrapper 放手、不序列化回傳值 */
-export const RAW: unique symbol = Symbol('directus-kit:raw')
+export const RAW: unique symbol = Symbol('directus-typed-kit:raw')
 
-const REPLY = Symbol('directus-kit:reply')
+const REPLY = Symbol('directus-typed-kit:reply')
 
 /** 指定狀態碼回應（取代 res.status().json(); return）\
  *  body 省略 → 空 body（如 204）

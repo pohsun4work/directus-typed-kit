@@ -2,7 +2,7 @@
 
 import { describe, expectTypeOf, it } from 'vitest'
 
-import type { EndpointTools } from 'directus-kit'
+import type { EndpointTools } from 'directus-typed-kit'
 
 // guard ctx 累加與 Schema 內容無關，給最小 SchemaShape 即可
 interface Schema {

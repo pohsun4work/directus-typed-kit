@@ -9,11 +9,11 @@ import type { Filter } from '../src/data-access/typed-items.js'
 import type { SchemaKnex } from '../src/data-access/types.js'
 import type { Concealed } from '../src/schema/conceal.js'
 import type { KnexView, Timestamp } from '../src/schema/dates.js'
-import type { CollectionItem, TypedItemsService } from 'directus-kit'
+import type { CollectionItem, TypedItemsService } from 'directus-typed-kit'
 import type { Knex } from 'knex'
 
 // KnexOverrides 逃生口：登錄一張非 SDK 的自訂 raw 表（系統表已由 kit 內建、不需登錄）
-declare module 'directus-kit' {
+declare module 'directus-typed-kit' {
   interface KnexOverrides {
     my_raw_table: { id: string; payload: string | null };
   }

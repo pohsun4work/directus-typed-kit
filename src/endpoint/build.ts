@@ -53,7 +53,7 @@ export function buildEndpointTools<S extends SchemaShape>(
       return value
     const result = await runStandard(schema, value)
     if ('issues' in result) {
-      logger.error({ issues: result.issues }, 'directus-kit: response validation failed')
+      logger.error({ issues: result.issues }, 'directus-typed-kit: response validation failed')
       throw new ResponseValidationError()
     }
     return result.value

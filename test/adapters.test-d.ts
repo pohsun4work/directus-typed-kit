@@ -5,9 +5,9 @@ import { describe, expectTypeOf, it } from 'vitest'
 
 import type { SchemaKnex } from '../src/data-access/types.js'
 import type { KnexView, Timestamp } from '../src/schema/dates.js'
-import type { CollectionItem, TypedItemsService } from 'directus-kit'
-import type { FromGenerateTypes } from 'directus-kit/adapters/generate-types'
-import type { FromTsTypegen } from 'directus-kit/adapters/ts-typegen'
+import type { CollectionItem, TypedItemsService } from 'directus-typed-kit'
+import type { FromGenerateTypes } from 'directus-typed-kit/adapters/generate-types'
+import type { FromTsTypegen } from 'directus-typed-kit/adapters/ts-typegen'
 
 describe('FromTsTypegen 系統表 enrichment（適配器灌入、core 不認得系統表）', () => {
   // 原始 ts-typegen 產出：系統表只含自訂欄位（singleton），自訂 collection 為 Row[]、日期為 "datetime"

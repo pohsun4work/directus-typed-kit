@@ -6,16 +6,16 @@
     ],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    // type-test 同時 import 'directus-kit'(public)與 '../src'(internal)
+    // type-test 同時 import 'directus-typed-kit'(public)與 '../src'(internal)
     // 不 alias 則前者經 package.json exports 落到 dist、與 src 成兩份模組身分
-    // → declare module 'directus-kit' 的 augmentation 掛 dist、src 側讀不到
+    // → declare module 'directus-typed-kit' 的 augmentation 掛 dist、src 側讀不到
     // alias 指回 src 讓兩條合一(IDE 與 tsc 一致);src 自身全走相對 import、不受影響
     "paths": {
-      "directus-kit": ["./src/index.ts"],
-      "directus-kit/hook": ["./src/hook/index.ts"],
-      "directus-kit/endpoint": ["./src/endpoint/index.ts"],
-      "directus-kit/adapters/ts-typegen": ["./src/adapters/ts-typegen/index.ts"],
-      "directus-kit/adapters/generate-types": ["./src/adapters/generate-types/index.ts"]
+      "directus-typed-kit": ["./src/index.ts"],
+      "directus-typed-kit/hook": ["./src/hook/index.ts"],
+      "directus-typed-kit/endpoint": ["./src/endpoint/index.ts"],
+      "directus-typed-kit/adapters/ts-typegen": ["./src/adapters/ts-typegen/index.ts"],
+      "directus-typed-kit/adapters/generate-types": ["./src/adapters/generate-types/index.ts"]
     },
     "types": [
       "node"
