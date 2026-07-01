@@ -56,7 +56,7 @@ function toKeys(raw: (string | number)[] | undefined, key: string | number | und
   return []
 }
 
-// delete 事件下 payload 直接是 keys 陣列、meta.keys 為 undefined（Directus API 不一致）
+/** delete 事件下 payload 直接是 keys 陣列、meta.keys 為 undefined（Directus API 不一致） */
 function normalizeKeys(payload: unknown, meta: NativeEventMeta, isDelete: boolean): string[] {
   if (isDelete && Array.isArray(payload))
     return payload.map(String)
@@ -87,7 +87,7 @@ export function buildHookTools<S extends SchemaShape>(
   ): { middleware: FilterMiddleware[]; handler: H } =>
     Array.isArray(a) ? { middleware: a, handler: b as H } : { middleware: [], handler: a }
 
-  // before* / filter 逃生口：寫入前，可改 payload / throw 擋下、自動 return
+  // before* / filter：寫入前，可改 payload / throw 擋下
   const registerFilter = (
     event: string,
     collection: string,
@@ -102,7 +102,7 @@ export function buildHookTools<S extends SchemaShape>(
         const eventMeta = makeEventMeta(meta, event, collection, keys)
         const eventCtx: EventContext = { accountability }
 
-        // delete：第一參數給 keys（無 row payload），其餘 before* 給 payload
+        // delete 無 row payload，故第一參數改給 keys，其餘 before* 才給 payload
         const base: FilterHandler<unknown> = isDelete
           ? async (_p, m, c) => {
             await (handler as DeleteHandler)(keys, m, c)
@@ -117,8 +117,7 @@ export function buildHookTools<S extends SchemaShape>(
     })
   }
 
-  // after* / action 逃生口：寫入後副作用，無回傳
-  // middleware 以 meta.payload 當 payload 套用
+  // after* / action 逃生口：寫入後才跑的副作用
   const registerAction = (
     event: string,
     collection: string,
@@ -128,15 +127,16 @@ export function buildHookTools<S extends SchemaShape>(
     events.action(event, async (meta, ctx) => {
       const accountability = (ctx?.accountability ?? null) as EventContext['accountability']
       await contextStore.run({ accountability, schema: ctx?.schema }, async () => {
-        const keys = normalizeKeys(undefined, meta, false)
+        const keys = toKeys(meta.keys, meta.key)
         const actionMeta: ActionMeta = {
           ...makeEventMeta(meta, event, collection, keys),
           payload: meta.payload ?? {},
         }
         const eventCtx: EventContext = { accountability }
         if (middleware.length) {
-          const base: FilterHandler<unknown> = async (_p, _m, c) => {
-            await handler(actionMeta, c)
+          // middleware 轉換後的 payload 回灌 handler，否則 validate 的 coerce 在 after* 會被靜默丟棄
+          const base: FilterHandler<unknown> = async (p, _m, c) => {
+            await handler({ ...actionMeta, payload: (p ?? {}) as Record<string, unknown> }, c)
           }
           const composed = applyFilterMiddleware(middleware, base)
           await composed(actionMeta.payload, actionMeta, eventCtx)
@@ -163,11 +163,8 @@ export function buildHookTools<S extends SchemaShape>(
         registerAction(`${collection}.items.${verb}`, collection, middleware, handler)
       }
 
-  // beforeRoutes / afterRoutes：把「init(phase, ({app}) => app.use(path?, handler))」收成一行
-  // 首參為 function → 無 path、app 全域
-  // 每請求包一層 contextStore（帶 req.accountability），讓 handler 內 items({as:'caller'}) 取得呼叫者身分
-  // 與 before*/after* 一致（schema 省略、access 層需要時 await getSchema）
-  // wrapped 的固定 arity 同時決定 express 分派：routes.before 3 參數=一般、routes.after 4 參數=error handler（req 在第 2 參）
+  // beforeRoutes / afterRoutes：每請求包一層 contextStore（帶 req.accountability），讓 handler 內 items({as:'caller'}) 取得呼叫者身分
+  // wrapped 的固定 arity 決定 express 分派：3 參數=一般 guard、4 參數=error handler（req 在第 2 參）
   const mountRoutes = (phase: 'routes.before' | 'routes.after') =>
     (a: unknown, b?: unknown): void => {
       const hasPath = typeof a !== 'function'
@@ -202,7 +199,6 @@ export function buildHookTools<S extends SchemaShape>(
 
     filter: ((event: string, a: FilterMiddleware[] | FilterHandler<unknown>, b?: FilterHandler<unknown>) => {
       const { middleware, handler } = splitArgs(a, b)
-      // 純 middleware gate 可省略 handler：補 no-op 收尾（同 beforeFor）
       registerFilter(event, '', middleware, handler ?? (() => {}), event.endsWith('.items.delete'))
     }) as HookTools<S>['filter'],
 
@@ -212,7 +208,7 @@ export function buildHookTools<S extends SchemaShape>(
     }) as HookTools<S>['action'],
 
     schedule: (cron, handler) => events.schedule(cron, handler),
-    // native init 一律送 Record<string, unknown>；typed meta 由公開簽章把關，邊界 cast
+    // native init 一律送 Record<string, unknown>，typed meta 由公開簽章把關，邊界 cast
     init: (event, handler) => events.init(event, handler as (meta: Record<string, unknown>) => void),
     beforeRoutes: mountRoutes('routes.before') as HookTools<S>['beforeRoutes'],
     afterRoutes: mountRoutes('routes.after') as HookTools<S>['afterRoutes'],

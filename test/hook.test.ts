@@ -11,6 +11,8 @@ import { definePermission } from '../src/hook/middleware.js'
 
 import type { Accountability } from '../src/core/types.js'
 import type { ServiceAs } from '../src/data-access/directus-services.js'
+import type { WritePayload } from '../src/data-access/typed-items.js'
+import type { FilterHandler, FilterMiddleware } from '../src/hook/types.js'
 
 interface Schema {
   files: { id: string; file: string }[];
@@ -202,6 +204,44 @@ describe('filter 逃生口省略 handler（非 items 事件的純 gate）', () =
     await expect(run({ email: 'x' }, { keys: [] }, { accountability: { admin: false } }))
       .rejects
       .toBeInstanceOf(ForbiddenError)
+  })
+})
+
+describe('after* middleware 轉換回灌 handler', () => {
+  type ActionArg = Parameters<EventsArg['action']>[1]
+
+  function setupAction() {
+    const actions = new Map<string, ActionArg>()
+    const events: EventsArg = {
+      filter: () => {},
+      action: (event, handler) => {
+        actions.set(event, handler)
+      },
+      schedule: () => {},
+      init: () => {},
+      embed: () => {},
+    }
+    const context: ContextArg = {
+      database: {},
+      services: {},
+      getSchema: async () => ({}),
+      logger: console as unknown as ContextArg['logger'],
+    }
+    const tools = buildHookTools<Schema>(events, context)
+    return { tools, actions }
+  }
+
+  it('middleware 改寫 payload → handler 讀到轉換後的值（非原始 meta.payload）', async () => {
+    const { tools, actions } = setupAction()
+    const bump: FilterMiddleware = <T>(next: FilterHandler<T>): FilterHandler<T> =>
+      async (_payload, meta, ctx) => next({ file: 'coerced' } as WritePayload<T>, meta, ctx)
+    let seen: unknown
+    tools.afterCreate('files', [bump], (meta) => {
+      seen = meta.payload
+    })
+    const run = actions.get('files.items.create')!
+    await run({ payload: { file: 'raw' }, keys: ['1'] }, { accountability: { admin: false } })
+    expect(seen).toEqual({ file: 'coerced' })
   })
 })
 
