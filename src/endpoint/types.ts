@@ -1,20 +1,17 @@
-// endpoint domain 型別：route / guard / 回傳語義 / EndpointTools
-
 import type { Accountability, Logger } from '../core/types.js'
 import type { SchemaShape } from '../data-access/typed-items.js'
 import type { DataAccess } from '../data-access/types.js'
 import type { InferOutput, StandardSchemaV1 } from '../schema/standard-schema.js'
 import type { Request, Response, Router } from 'express'
 
-export type RawResponse = typeof import('./schema-guards.js').RAW
-
-/** reply() 的回傳 sentinel；wrapper 偵測後以指定狀態碼回應 */
-export interface Reply {
+/** reply() 的回傳 sentinel，帶私有 REPLY brand 使手寫 { status, body } 無法冒充 */
+export type Reply = {
   status: number;
   body?: unknown;
-}
+} & Record<typeof import('./schema-guards.js').REPLY, true>
 
-export type RouteResult = unknown | RawResponse
+/** unknown 已吸收一切（含 RAW sentinel），單獨列聯集只是誤導 */
+export type RouteResult = unknown
 
 export interface RouteContext {
   req: Request;
@@ -54,5 +51,5 @@ export interface EndpointTools<S extends SchemaShape> extends DataAccess<S> {
   accountability: (req: Request) => Accountability | null;
 }
 
-// guard schema 推導輔助（schema-guards 用，internal）
+/** guard schema 推導輔助，internal */
 export type SchemaGuardOutput<Sc> = InferOutput<Sc>

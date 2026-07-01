@@ -1,7 +1,4 @@
 // 把原生 express Router 包成 route.get/post… + guards + Standard Schema + 回傳語義 wrapper
-// guards 依序執行、回傳物件 merge 進 ctx（型別累加）
-// handler 回傳值自動序列化
-// throw 交 Directus error handler 轉對應 HTTP
 
 import { contextStore } from '../core/context.js'
 import { ResponseValidationError } from '../core/errors.js'
@@ -44,12 +41,13 @@ export function buildEndpointTools<S extends SchemaShape>(
   })
   const logger = context.logger
 
-  // response schema（如有）驗證輸出：不符 = server bug → 500 + log，不外洩細節
+  /** response schema 驗證輸出：不符 = server bug → 500 + log，不外洩細節 */
   const validateResponse = async (
     schema: RouteOptions<readonly Guard[]>['response'],
     value: unknown,
   ): Promise<unknown> => {
-    if (!schema || value === undefined)
+    // 有 schema 就連 undefined 也驗：handler 漏 return 或 reply 無 body 屬破約，須浮現而非靜默放行
+    if (!schema)
       return value
     const result = await runStandard(schema, value)
     if ('issues' in result) {
@@ -65,15 +63,16 @@ export function buildEndpointTools<S extends SchemaShape>(
       optionsOrHandler: RouteOptions<readonly Guard[]> | AnyHandler,
       maybeHandler?: AnyHandler,
     ) => {
-      const hasOptions = typeof maybeHandler === 'function'
-      const options: RouteOptions<readonly Guard[]> = hasOptions
+      // 有第三參數才代表第二參數是 options，否則第二參數即 handler
+      const hasSeparateHandler = typeof maybeHandler === 'function'
+      const options: RouteOptions<readonly Guard[]> = hasSeparateHandler
         ? (optionsOrHandler as RouteOptions<readonly Guard[]>)
         : {}
-      const handler = (hasOptions ? maybeHandler : (optionsOrHandler as AnyHandler))!
+      const handler = (hasSeparateHandler ? maybeHandler : (optionsOrHandler as AnyHandler))!
 
       router[method](path, async (req: Request, res: Response, next: NextFunction) => {
         const accountability = getAccountability(req)
-        // route scope：guards 與 handler 都跑在此 scope 下，items({as:'caller'}) 取得本請求身分
+        // guards 與 handler 都跑在此 scope 下，items({as:'caller'}) 才取得本請求身分
         await contextStore.run({ accountability }, async () => {
           try {
             const ctx: RouteContext = {
@@ -85,7 +84,7 @@ export function buildEndpointTools<S extends SchemaShape>(
               accountability,
             }
 
-            // guards 依序 await，回傳物件 merge 進 ctx；throw 即中止並由 catch 轉 HTTP
+            // guards 依序 await，回傳物件 merge 進 ctx，throw 即中止並由 catch 轉 HTTP
             for (const guard of options.guards ?? []) {
               const extra = await guard(ctx)
               if (extra)
@@ -98,16 +97,14 @@ export function buildEndpointTools<S extends SchemaShape>(
             if (result === RAW)
               return
 
-            if (isReply(result)) {
-              const validated = await validateResponse(options.response, result.body)
-              if (validated === undefined)
-                res.status(result.status).end()
-              else res.status(result.status).json(validated)
-              return
-            }
-
-            const validated = await validateResponse(options.response, result)
-            res.json(validated)
+            // reply 帶狀態碼與 body，否則整個回傳值即 body、狀態預設 200
+            const replying = isReply(result)
+            const status = replying ? result.status : 200
+            const validated = await validateResponse(options.response, replying ? result.body : result)
+            // body 為 undefined 即 end()：不論狀態碼皆不掛 application/json、不寫空 body
+            if (validated === undefined)
+              res.status(status).end()
+            else res.status(status).json(validated)
           }
           catch (err) {
             next(err)

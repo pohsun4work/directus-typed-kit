@@ -1,5 +1,4 @@
 // endpoint 這側的 Standard Schema guard（body/query/params）＋ 回傳語義 sentinel（reply / RAW）
-// guard 與 hook 的 validate() 共用同一驗證抽象；成功把 typed 值併進 ctx，失敗自動 400
 
 import { ValidationError } from '../core/errors.js'
 import { runStandard } from '../schema/standard-schema.js'
@@ -10,13 +9,14 @@ import type { Guard, Reply } from './types.js'
 /** streaming 等需要自己寫 res 時，handler 回傳 RAW 告知 wrapper 放手、不序列化回傳值 */
 export const RAW: unique symbol = Symbol('directus-typed-kit:raw')
 
-const REPLY = Symbol('directus-typed-kit:reply')
+/** Reply 的 brand key：unique symbol 讓 Reply 型別能綁定它，手寫物件無此 key 即無法冒充 */
+export const REPLY: unique symbol = Symbol('directus-typed-kit:reply')
 
-/** 指定狀態碼回應（取代 res.status().json(); return）\
- *  body 省略 → 空 body（如 204）
+/** 指定狀態碼回應，取代手動 res.status().json()
+ * body 省略 → 空 body（如 204）
  */
 export function reply(status: number, body?: unknown): Reply {
-  return { [REPLY]: true, status, body } as Reply
+  return { [REPLY]: true, status, body }
 }
 
 export function isReply(value: unknown): value is Reply {
