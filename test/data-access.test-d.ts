@@ -204,3 +204,29 @@ describe('SchemaKnex（raw knex 依 Schema / KnexOverrides typed）', () => {
     expectTypeOf(k.transaction).not.toBeNever()
   })
 })
+
+describe('KnexView nullable 欄位（null 聯集不得誤走關聯分支）', () => {
+  interface NullableRow {
+    id: string;
+    csv_tags: string[] | null; // nullable csv/enum：DB 存逗號字串
+    meta: Record<string, unknown> | null; // 純量 JSON 物件（非關聯）
+    owner: string | Folder | null; // m2o nullable
+    children: FileTag[] | null; // nullable o2m（FK 在 child 表）
+  }
+
+  it('nullable csv → string | null（不塌成 null）', () => {
+    expectTypeOf<KnexView<NullableRow>['csv_tags']>().toEqualTypeOf<string | null>()
+  })
+
+  it('純量 JSON 物件原樣保留（不被 m2o 判準塌成 null）', () => {
+    expectTypeOf<KnexView<NullableRow>['meta']>().toEqualTypeOf<Record<string, unknown> | null>()
+  })
+
+  it('nullable m2o → FK', () => {
+    expectTypeOf<KnexView<NullableRow>['owner']>().toEqualTypeOf<string | null>()
+  })
+
+  it('nullable o2m → 移除（parent 表無此欄）', () => {
+    expectTypeOf<KnexView<NullableRow>>().not.toHaveProperty('children')
+  })
+})
