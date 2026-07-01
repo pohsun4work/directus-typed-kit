@@ -41,6 +41,45 @@ describe('FromTsTypegen 系統表 enrichment（適配器灌入、core 不認得�
     expectTypeOf(row?.filesize).toEqualTypeOf<string | null | undefined>()
     expectTypeOf(row?.uploaded_on).toEqualTypeOf<Date | undefined>()
   })
+
+  it('directus_settings（singleton 核心表）也補上核心欄位', async () => {
+    const row = await k('directus_settings').select('project_name').first()
+    expectTypeOf(row?.project_name).toEqualTypeOf<string | undefined>()
+  })
+
+  it('directus_collections / fields / relations / extensions 皆納入 Schema', () => {
+    expectTypeOf<Mapped['directus_relations']>().not.toBeNever()
+    expectTypeOf<Mapped['directus_collections']>().not.toBeNever()
+    expectTypeOf<Mapped['directus_fields']>().not.toBeNever()
+    expectTypeOf<Mapped['directus_extensions']>().not.toBeNever()
+  })
+})
+
+describe('FromTsTypegen Overrides 打通到系統表', () => {
+  interface RawSchema {
+    articles: { id: string; title: string }[];
+    directus_users: { quota_override_bytes: number | null };
+  }
+  // 把系統欄位 last_access 改標 time：knex 視角應得 string（非預設 timestamp 的 Date）
+  type Mapped = FromTsTypegen<RawSchema, { directus_users: { last_access: 'time' } }>
+  const k = {} as SchemaKnex<Mapped>
+
+  it('系統欄位可經 Override 修正 temporal kind', async () => {
+    const row = await k('directus_users').select('last_access').first()
+    expectTypeOf(row?.last_access).toEqualTypeOf<string | null | undefined>()
+  })
+})
+
+describe('FromTsTypegen optional 自訂欄位正規化（與 generate-types 一致、無殘留 undefined）', () => {
+  interface RawSchema {
+    articles: { id: string; title: string }[];
+    directus_users: { foo?: number | null }; // optional 自訂欄位
+  }
+  type Mapped = FromTsTypegen<RawSchema>
+
+  it('optional 欄位去 optional 並剝 undefined → number | null', () => {
+    expectTypeOf<CollectionItem<Mapped, 'directus_users'>['foo']>().toEqualTypeOf<number | null>()
+  })
 })
 
 describe('FromGenerateTypes 適配器（自包含、僅標 conceal、日期不 brand）', () => {
