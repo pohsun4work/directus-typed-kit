@@ -16,10 +16,12 @@ export interface EventMeta {
 export interface ActionMeta<T = Record<string, unknown>> extends EventMeta {
   payload: WritePayload<T>;
 }
-/** before / after 共同的 context 欄位，`schema` 為本次事件的 SchemaOverview（免再 await getSchema()） */
+/** `schema` 是本次事件的 SchemaOverview，免再 await getSchema()\
+ *  optional 對齊 Directus：其 `EventContext.schema` 為 `SchemaOverview | null`，非 items 事件常是空的
+ */
 export interface EventContext {
   accountability: Accountability | null;
-  schema: SchemaOverview;
+  schema?: SchemaOverview;
 }
 
 /** `database` 是本次 mutation 的交易，查得到尚未 commit 的變更\
