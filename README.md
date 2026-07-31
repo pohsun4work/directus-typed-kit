@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/directus-typed-kit)](https://www.npmjs.com/package/directus-typed-kit)
 [![license](https://img.shields.io/npm/l/directus-typed-kit)](./LICENSE)
 
-為 Directus 的 **hook / endpoint** extension 補上完整型別。註冊一次專案 Schema，hook payload、`ItemsService`、knex 查詢就全程 typed。runtime 100% 沿用原生 `defineHook` / `defineEndpoint`，kit 只加型別與組合便利層。
+為 Directus 的 **hook / endpoint** extension 補上完整型別。註冊一次專案 Schema，hook payload、`ItemsService`、knex 查詢結果就全程 typed。runtime 100% 沿用原生 `defineHook` / `defineEndpoint`，kit 只加型別與組合便利層。
 
 ## 安裝
 
@@ -84,7 +84,7 @@ export default createHook(({ beforeCreate, afterUpdate, items, logger }) => {
     payload.password_hash = hashPassword(payload.password_hash as string)
   })
 
-  // ItemsService 完整 typed：結果依 fields 收斂、含一層巢狀關聯
+  // ItemsService 完整 typed：結果依 fields 收斂，巢狀點記逐層推導
   afterUpdate('files', async ({ keys }) => {
     const rows = await items('files').readMany(keys, { fields: ['id', 'folder.name'] })
     for (const r of rows) logger.info({ id: r.id, folder: r.folder.name })
@@ -138,6 +138,10 @@ hook 與 endpoint 的 tools 都帶 Schema 綁定的存取器，全部 typed：`i
 
 - **conceal 欄位**（password / token…）：service **讀取**視角移除（讀出是遮蔽字串），要真值改走 `knex`；**寫入**視角保留為純 `string`（建帳號、hook 內雜湊密碼都用得到）
 - **日期欄位**：items / SDK 視角是 `string`，knex 視角是 `Date`（`time` 兩邊皆 `string`）
+
+`fields` 與 `sort` 都吃巢狀點記（`folder.parent.name`、`sort: ['-folder.name']`），結果型別逐層推導。點記深度上限為三段——自參照關聯（`parent: Folder`）否則會無限遞迴，且候選 union 隨層數指數成長。
+
+typed knex 的保障範圍是**取回的 row 有型別**（`row.nope` 會報錯），不含查詢條件：`where({ nope: 1 })`、`select('nope')` 走的是 knex `QueryBuilder` 自身的 fallback overload，未知欄位不會被擋。
 
 `services.XxxService()` 的保留名對應 Directus 內建 service，優先於同名 collection。名單為 `Assets / Files / Mail / Users / Roles / Folders / Permissions / Policies / Shares / Revisions / Activity / Settings / Notifications / Flows / Operations / Presets / Translations / Collections / Fields / Relations / Extensions`——業務表撞名時該工廠取的是內建 service，其 CRUD 請改用 `items(collection)`（kit 偵測到會 warn 一次）。
 

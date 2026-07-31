@@ -1,8 +1,6 @@
 // service 工廠集合的兩類 key：
 //   1. 內建特化 service（FilesService / AssetsService…）→ runtime 用同名注入 class 建構、不帶 collection
 //   2. 其餘 Schema collection → `${Pascal(C)}Service` 工廠 → runtime 走 ItemsService(C)
-// 撞到保留名者（files / folders…）讓位給內建特化，該 collection 的 CRUD 改用 items(collection)
-// 工廠同步回傳 lazy proxy（同 items()），方法呼叫時才建構底層 service
 
 import type { Accountability, Identity } from '../core/types.js'
 import type { PrimaryKey, Query, ReadOptions, SchemaShape, TypedItemsService, WriteOptions } from './typed-items.js'
@@ -30,12 +28,10 @@ type Cap<S extends string> = S extends `${infer H}${infer T}` ? `${Uppercase<H>}
 type Pascal<S extends string> = S extends `${infer Head}_${infer Tail}`
   ? `${Cap<Head>}${Pascal<Tail>}`
   : Cap<S>
-/** collection 名 → service 工廠 key，例：'file_tags' → 'FileTagsService' */
+/** 例：'file_tags' → 'FileTagsService' */
 export type ServiceKey<C extends string> = `${Pascal<C>}Service`
 
-/** Directus ItemsService 家族通用方法\
- *  系統集合的 Schema 型別常為部分擴充，故 payload/result 放寬
- */
+/** 系統集合的 Schema 型別常為部分擴充，故 payload/result 放寬 */
 export interface ItemsServiceLike<Item = Record<string, any>> {
   createOne: (data: Partial<Item>, opts?: WriteOptions) => Promise<PrimaryKey>;
   createMany: (data: Partial<Item>[], opts?: WriteOptions) => Promise<PrimaryKey[]>;
@@ -55,13 +51,12 @@ export interface ItemsServiceLike<Item = Record<string, any>> {
   deleteMany: (keys: PrimaryKey[], opts?: WriteOptions) => Promise<PrimaryKey[]>;
 }
 
-/** Directus FilesService：ItemsService over directus_files + 二進位專屬方法（連磁碟 / S3 實體） */
+/** uploadOne / importOne 會實際寫入磁碟或 S3，不只是寫 directus_files 那列 */
 export interface FilesService extends ItemsServiceLike {
   uploadOne: (stream: unknown, data: Record<string, unknown>, primaryKey?: PrimaryKey, opts?: unknown) => Promise<PrimaryKey>;
   importOne: (importURL: string, body: Record<string, unknown>) => Promise<PrimaryKey>;
 }
 
-/** Directus AssetsService：串流 / 轉檔取得 binary */
 export interface AssetsService {
   getAsset: (
     id: string,
@@ -74,9 +69,6 @@ export interface MailService {
   send: (options: Record<string, unknown>) => Promise<unknown>;
 }
 
-/** 保留的內建特化 service 名稱 → 型別\
- *  撞到這些名稱的 collection 一律讓位給內建，業務 CRUD 改用 items(collection)
- */
 export interface SpecialServiceTypes {
   AssetsService: AssetsService;
   FilesService: FilesService;
@@ -101,14 +93,11 @@ export interface SpecialServiceTypes {
   ExtensionsService: ItemsServiceLike;
 }
 
-/** kit 由 Schema 產生的 service 工廠集合（tools.services 的型別），值皆為 ServiceFactory\
- *  內建保留名給特化型別，其餘 collection 自動產生（TypedItemsService）
- */
 export type ServiceFactories<S extends SchemaShape>
   = & { [C in keyof S & string as Exclude<ServiceKey<C>, keyof SpecialServiceTypes>]: ServiceFactory<TypedItemsService<S, C>> }
     & { [K in keyof SpecialServiceTypes]: ServiceFactory<SpecialServiceTypes[K]> }
 
-// satisfies Record<keyof SpecialServiceTypes, 1>：漏一個或多一個名稱即編譯錯，強制與型別同步
+// 名單與 SpecialServiceTypes 漏同步即編譯錯，故繞道 satisfies 而非直接寫字串 Set
 const SPECIAL_SERVICE_NAME_MAP = {
   AssetsService: 1,
   FilesService: 1,
@@ -135,14 +124,13 @@ const SPECIAL_SERVICE_NAME_MAP = {
 
 export const SPECIAL_SERVICE_NAMES: ReadonlySet<string> = new Set(Object.keys(SPECIAL_SERVICE_NAME_MAP))
 
-/** collection 名 → 工廠 key 的 runtime 版，與型別層 Pascal 對齊且無損：'file_tags' → 'FileTagsService' */
+/** 與型別層 Pascal 對齊：'file_tags' → 'FileTagsService' */
 export function collectionToServiceKey(collection: string): string {
   const pascal = collection.split('_').map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1)).join('')
   return `${pascal}Service`
 }
 
-/** service 工廠 key 反推 collection 名，例：'FileTagsService' 得 'file_tags'
- * Pascal 會吃掉底線，regex 無損反推不了（user_2fa 產生的 User2faService 只能反推成 user2fa）
+/** Pascal 會吃掉底線，regex 無損反推不了（user_2fa 產生的 User2faService 只能反推成 user2fa）
  * 給了 schema 真實 collection 名時改用 forward Pascal 比對取回原名，否則退回 regex 盡力反推
  *
  * Pascal 非單射（`private` 與 `_private` 同產 `PrivateService`），比對到多張表時 throw：

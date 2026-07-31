@@ -87,6 +87,16 @@ describe('fields→result 投影', () => {
     expectTypeOf(r).toEqualTypeOf<{ id: string; tags: { label: string }[] }[]>()
   })
 
+  it('多級點記逐層收斂（ApplyFields 本就支援任意深度，限制在入口）', async () => {
+    const r = await files.readByQuery({ fields: ['id', 'folder.parent.name'] })
+    expectTypeOf(r).toEqualTypeOf<{ id: string; folder: { parent: { name: string } | null } | null }[]>()
+  })
+
+  it('超過三段的點記被擋（自參照關聯會無限遞迴、union 也隨層數指數成長）', async () => {
+    // @ts-expect-error 點記深度上限為三段
+    await files.readByQuery({ fields: ['folder.parent.parent.name'] })
+  })
+
   it('星號展開 *.* → 關聯展開一層、m2o 保留 null 且無假空分支', async () => {
     const r = await files.readByQuery({ fields: ['*.*'] })
     // folder 展開成 Folder（parent 收 FK）| null，不含多餘的 {} 空分支
@@ -103,6 +113,20 @@ describe('fields→result 投影', () => {
       folder: string | null;
       tags: string[];
     }>()
+  })
+})
+
+describe('sort', () => {
+  it('根欄位、`-` 降冪、巢狀點記（Directus 原生支援 sort=folder.name）', async () => {
+    await files.readByQuery({ sort: ['display_name', '-size_bytes'] })
+    await files.readByQuery({ sort: ['folder.name', '-folder.parent.name'] })
+    // 單值形式同樣吃 `-` 與巢狀
+    await files.readByQuery({ sort: '-folder.name' })
+  })
+
+  it('不存在的欄位仍被擋', async () => {
+    // @ts-expect-error files 無此欄位
+    await files.readByQuery({ sort: ['nope'] })
   })
 })
 
