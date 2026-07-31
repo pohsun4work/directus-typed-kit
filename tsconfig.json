@@ -13,9 +13,7 @@
     "paths": {
       "directus-typed-kit": ["./src/index.ts"],
       "directus-typed-kit/hook": ["./src/hook/index.ts"],
-      "directus-typed-kit/endpoint": ["./src/endpoint/index.ts"],
-      "directus-typed-kit/adapters/ts-typegen": ["./src/adapters/ts-typegen/index.ts"],
-      "directus-typed-kit/adapters/generate-types": ["./src/adapters/generate-types/index.ts"]
+      "directus-typed-kit/endpoint": ["./src/endpoint/index.ts"]
     },
     "types": [
       "node"
