@@ -4,7 +4,7 @@ import { ValidationError } from '../core/errors.js'
 import { runStandard } from '../schema/standard-schema.js'
 
 import type { InferOutput, StandardSchemaV1 } from '../schema/standard-schema.js'
-import type { Guard, Reply } from './types.js'
+import type { Reply, RequestGuard } from './types.js'
 
 /** streaming 等需要自己寫 res 時，handler 回傳 RAW 告知 wrapper 放手、不序列化回傳值 */
 export const RAW: unique symbol = Symbol('directus-typed-kit:raw')
@@ -25,7 +25,7 @@ export function isReply(value: unknown): value is Reply {
 
 /** 驗 ctx 上的某欄位（body / query / params），成功回 { [key]: typed }，失敗 throw 400 */
 function makeSchemaGuard<K extends 'body' | 'query' | 'params'>(key: K) {
-  return <Sc extends StandardSchemaV1>(schema: Sc): Guard<{ [P in K]: InferOutput<Sc> }> =>
+  return <Sc extends StandardSchemaV1>(schema: Sc): RequestGuard<{ [P in K]: InferOutput<Sc> }> =>
     async (ctx) => {
       const result = await runStandard(schema, ctx[key])
       if ('issues' in result)

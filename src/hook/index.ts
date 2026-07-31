@@ -17,11 +17,18 @@ export function createHook<S extends SchemaShape = RegisteredSchema>(register: (
 }
 
 export { definePermission, validate } from './middleware.js'
-// EventMeta / ActionMeta / EventContext（經 handler 型別帶出）、PermissionCheck / InitEvent 為內部型別，不對外
 export type {
   ActionHandler,
+  ActionMeta,
   DeleteHandler,
+  EventContext,
+  EventMeta,
+  FilterContext,
   FilterHandler,
   FilterMiddleware,
   HookTools,
+  InitEvent,
+  InitMetaMap,
+  MiddlewareHandler,
+  PermissionCheck,
 } from './types.js'

@@ -1,12 +1,13 @@
 // hook domain 型別測試（vitest --typecheck）：KitSchema 註冊（createHook / createEndpoint 免帶泛型即推導）、
 // before* 省略 handler 的純 middleware gate 多載（after* 不提供）
 
+import { body } from 'directus-typed-kit'
 import { createEndpoint } from 'directus-typed-kit/endpoint'
 import { createHook, definePermission } from 'directus-typed-kit/hook'
 import { describe, expectTypeOf, it } from 'vitest'
 
 import type { Timestamp } from '../src/schema/dates.js'
-import type { Accountability, TypedItemsService } from 'directus-typed-kit'
+import type { Accountability, Guard, StandardSchemaV1, TypedItemsService } from 'directus-typed-kit'
 import type { Application } from 'express'
 
 // KitSchema：註冊一次專案 Schema，驗證 createHook / createEndpoint 免帶泛型即推導
@@ -66,10 +67,84 @@ describe('KitSchema 註冊：createHook / createEndpoint 免帶泛型', () => {
     })
   })
 
+  it('外部模組的 guard 免帶 Schema 泛型即吃註冊值', () => {
+    const guard: Guard<{ hit: true }> = (ctx) => {
+      expectTypeOf(ctx.items('files')).toEqualTypeOf<TypedItemsService<Schema, 'files'>>()
+      return { hit: true }
+    }
+    createEndpoint(({ route }) => {
+      route.get('/x', { guards: [guard] }, (ctx) => {
+        expectTypeOf(ctx.hit).toEqualTypeOf<true>()
+      })
+    })
+  })
+
   it('仍可顯式帶泛型覆寫註冊值', () => {
     interface Other { widgets: { id: string }[] }
     createHook<Other>((tools) => {
       expectTypeOf(tools.beforeCreate).parameter(0).toEqualTypeOf<'widgets'>()
+    })
+  })
+
+  // 內建 guard 的 ctx 綁 RouteContext<S> 的話會被逆變釘死在註冊 Schema 上，
+  // 覆寫泛型時整組 guards 不 assignable、連帶吃掉同陣列其他 guard 的 extras
+  it('覆寫泛型後內建 guard 仍可用，且不影響同陣列其他 guard 的 extras', () => {
+    interface Other { widgets: { id: string }[] }
+    const schema = {} as StandardSchemaV1<unknown, { n: number }>
+    createEndpoint<Other>((tools) => {
+      tools.route.post('/x', {
+        guards: [body(schema), async (ctx) => ({ token: ctx.params.token! })],
+      }, (ctx) => {
+        expectTypeOf(ctx.body).toEqualTypeOf<{ n: number }>()
+        expectTypeOf(ctx.token).toEqualTypeOf<string>()
+        expectTypeOf(ctx.items('widgets')).toEqualTypeOf<TypedItemsService<Other, 'widgets'>>()
+      })
+    })
+  })
+})
+
+describe('after* 的 meta.payload 依 Schema 推導（與 before* 同待遇）', () => {
+  it('afterCreate 的 payload 為該 collection 的 deep-write 形狀', () => {
+    createHook((tools) => {
+      tools.afterCreate('files', (meta) => {
+        expectTypeOf(meta.payload.created_at).toEqualTypeOf<string | null | undefined>()
+        expectTypeOf(meta.keys).toEqualTypeOf<string[]>()
+      })
+    })
+  })
+})
+
+describe('handler context 的兩視角（before* 帶事件交易、after* 不帶）', () => {
+  it('before* 的 ctx.database 為 Schema 綁定 knex（非 any、非原生 Knex）', () => {
+    createHook((tools) => {
+      tools.beforeUpdate('files', async (_payload, _meta, ctx) => {
+        const row = await ctx.database('files').select('created_at').first()
+        // 走事件交易但視角同 tools.knex：timestamp → Date
+        expectTypeOf(row?.created_at).toEqualTypeOf<Date | null | undefined>()
+        // @ts-expect-error 型別非 any，不存在的欄位仍報錯
+        void row?.__definitely_not_a_column
+      })
+    })
+  })
+
+  it('beforeDelete 與 filter 逃生口的 ctx 同樣帶 database', () => {
+    createHook((tools) => {
+      tools.beforeDelete('files', (_keys, _meta, ctx) => {
+        expectTypeOf(ctx.database('file_tags')).not.toBeNever()
+      })
+      tools.filter('items.read', (_payload, _meta, ctx) => {
+        expectTypeOf(ctx.database('files')).not.toBeNever()
+      })
+    })
+  })
+
+  it('after* 的 ctx 不給 database（該連線等同 tools.knex，且已在交易外）', () => {
+    createHook((tools) => {
+      tools.afterUpdate('files', (_meta, ctx) => {
+        expectTypeOf(ctx.accountability).toEqualTypeOf<Accountability | null>()
+        // @ts-expect-error action ctx 刻意不含 database
+        void ctx.database
+      })
     })
   })
 })

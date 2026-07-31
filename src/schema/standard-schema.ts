@@ -17,10 +17,16 @@ export async function runStandard<Sc extends StandardSchemaV1>(
   schema: Sc,
   value: unknown,
 ): Promise<{ value: InferOutput<Sc> } | { issues: string[] }> {
-  let result = schema['~standard'].validate(value)
-  if (result instanceof Promise)
-    result = await result
-  if (result.issues)
-    return { issues: result.issues.map((i) => i.message) }
+  // 直接 await：`instanceof Promise` 對非原生 thenable 為 false，會把未解析的結果當成功值放行
+  const result = await schema['~standard'].validate(value)
+  if (result.issues) {
+    // 帶上 path，否則多欄位失敗時客戶端只收到 "Required; Required" 無從定位
+    return {
+      issues: result.issues.map((i) => {
+        const path = i.path?.map((seg) => (typeof seg === 'object' ? String(seg.key) : String(seg))).join('.')
+        return path ? `${path}: ${i.message}` : i.message
+      }),
+    }
+  }
   return { value: result.value as InferOutput<Sc> }
 }

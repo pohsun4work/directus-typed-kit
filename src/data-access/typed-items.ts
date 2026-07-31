@@ -1,5 +1,6 @@
-import type { OmitConcealed } from '../schema/conceal.js'
+import type { OmitConcealed, StripConceal } from '../schema/conceal.js'
 import type { StripDate } from '../schema/dates.js'
+import type { IsRelation, RelObject } from '../schema/relation.js'
 
 // 補原生 ItemsService 缺的兩塊型別：Query<Item> typed 輸入、ApplyFields fields→result 輸出推導
 // runtime 仍是原生 ItemsService，items() 以邊界 cast 成 TypedItemsService，不 subclass
@@ -9,14 +10,6 @@ import type { StripDate } from '../schema/dates.js'
  *  真正 row 由 CollectionItem 解出
  */
 export type SchemaShape = object
-
-/** 取關聯欄位的物件型別（m2o / o2m 皆可），非關聯得 never\
- *  排除可賦值給 string 者：branded string（日期 / conceal）型別上也是 object，不排除會被誤判成關聯
- */
-type RelObject<T> = T extends readonly (infer E)[]
-  ? Exclude<Extract<E, object>, string>
-  : Exclude<Extract<NonNullable<T>, object>, string>
-type IsRelation<T> = [RelObject<T>] extends [never] ? false : true
 
 /** 攤平 intersection，hover 顯示乾淨 */
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
@@ -45,9 +38,13 @@ type FkOf<T> = [T] extends [readonly (infer E)[]] ? Exclude<E, object>[] : Exclu
 type DirectField<Item, K extends keyof Item>
   = IsRelation<Item[K]> extends true ? FkOf<Item[K]> : StripDate<Item[K]>
 
-/** 直接欄位（不含點），'*' 走預設讀取、明列關聯欄位同樣收 FK */
+/** 直接欄位（不含點），'*' 走預設讀取、明列關聯欄位同樣收 FK\
+ *  星號要先 `Omit` 掉已被 `NestedPart` 接管的關聯鍵，否則同鍵撞出 `FK & 展開 row` 這種 runtime 不存在的交集
+ */
 type DirectPart<Item, F extends string>
-  = '*' extends F ? DefaultRead<Item> : { [K in (F & keyof Item)]: DirectField<Item, K> }
+  = '*' extends F
+    ? Omit<DefaultRead<Item>, RelPrefix<F> & keyof Item>
+    : { [K in (F & keyof Item)]: DirectField<Item, K> }
 
 /** 巢狀欄位（含點）：依關聯前綴分組展開 */
 type NestedPart<Item, F extends string> = {
@@ -137,8 +134,15 @@ export interface Query<Item> {
 
 // === TypedItemsService ===
 
+/** 讀取結果欄位恆在、值可能 null，故 Schema 寫 `field?: T | null` 時去 optional 並剝 undefined\
+ *  不正規化則兩條讀取路徑不一致：`DefaultRead` 是 homomorphic mapping、保留 optional modifier，\
+ *  而 `DirectPart` 的 key 集合換成 `F & keyof Item`、modifier 不保留
+ */
+type NormalizeRow<Row> = { [K in keyof Row]-?: Exclude<Row[K], undefined> }
+
 /** 取某 collection 單筆 row：一般集合是 Row[]、singleton 是 Row，一律解成 Row */
-export type CollectionItem<S, C extends keyof S> = S[C] extends readonly (infer I)[] ? I : S[C]
+export type CollectionItem<S, C extends keyof S>
+  = NormalizeRow<S[C] extends readonly (infer I)[] ? I : S[C]>
 
 /** service 視角 row：移除 conceal 欄位（讀出非真值） */
 type ServiceRow<S, C extends keyof S> = OmitConcealed<CollectionItem<S, C>>
@@ -184,33 +188,53 @@ type WriteRelation<T>
     ? (Exclude<E, object> | WritePayload<RelObject<T>>)[] | Extract<T, null>
     : FkOf<T> | WritePayload<RelObject<T>>
 
-type WriteField<T> = IsRelation<T> extends true ? WriteRelation<T> : StripDate<T>
+type WriteField<T> = IsRelation<T> extends true ? WriteRelation<T> : StripConceal<StripDate<T>>
 
-/** deep-write payload：欄位 optional、關聯收 FK 或巢狀 partial、日期脫成 string（呼叫端直接塞 ISO 字串） */
-export type WritePayload<Item> = Partial<{ [K in keyof Item]: WriteField<Item[K]> }>
+/** deep-write payload：欄位 optional、關聯收 FK 或巢狀 partial、日期與 conceal 脫 brand 成 string\
+ *  去 readonly 是必要的：generator 產的 Schema 常帶 readonly，而 hook handler 內 `payload.x = v` 是主流寫法
+ */
+export type WritePayload<Item> = { -readonly [K in keyof Item]?: WriteField<Item[K]> }
 
 /** 依 fields 推結果，無 fields 時走預設投影（關聯為 FK） */
 type Read<Item, Q> = Q extends { fields: readonly (infer F extends string)[] } ? ApplyFields<Item, F> : DefaultRead<Item>
 
+/** 讀取方法的選用 opts（`emitEvents:false` 語義同 WriteOptions） */
+export interface ReadOptions {
+  emitEvents?: boolean;
+  stripNonRequested?: boolean;
+}
+
 /** 完整 typed 的 ItemsService（runtime 為原生實例的邊界 cast 目標）\
- *  const Q 保留 fields 字面量才能推精準結果，Key 由 Schema 的 id 欄位推導
+ *  const Q 保留 fields 字面量才能推精準結果，Key 由 Schema 的 id 欄位推導\
+ *  讀寫兩個 row 分開：讀取視角移除 conceal 欄位（讀出非真值），寫入視角保留但脫 brand（寫進去是明文）
  */
 export interface TypedItemsService<
   S extends SchemaShape,
   C extends keyof S,
   Item = ServiceRow<S, C>,
-  Key = Item extends { id: infer K } ? K & PrimaryKey : PrimaryKey
+  Key = Item extends { id: infer K } ? K & PrimaryKey : PrimaryKey,
+  Payload = WritePayload<CollectionItem<S, C>>
 > {
-  readByQuery: <const Q extends Query<Item>>(query: Q) => Promise<Read<Item, Q>[]>;
-  readOne: <const Q extends Query<Item>>(key: Key, query?: Q) => Promise<Read<Item, Q>>;
-  readMany: <const Q extends Query<Item>>(keys: Key[], query?: Q) => Promise<Read<Item, Q>[]>;
+  readByQuery: <const Q extends Query<Item>>(query: Q, opts?: ReadOptions) => Promise<Read<Item, Q>[]>;
+  readOne: <const Q extends Query<Item>>(key: Key, query?: Q, opts?: ReadOptions) => Promise<Read<Item, Q>>;
+  readMany: <const Q extends Query<Item>>(keys: Key[], query?: Q, opts?: ReadOptions) => Promise<Read<Item, Q>[]>;
+  /** singleton collection（Schema 寫裸 `Row` 而非 `Row[]`）專用，未設定過時欄位可能缺席故回 Partial */
+  readSingleton: <const Q extends Query<Item>>(query: Q, opts?: ReadOptions) => Promise<Partial<Read<Item, Q>>>;
+  getKeysByQuery: (query: Query<Item>) => Promise<Key[]>;
 
-  createOne: (payload: WritePayload<Item>, opts?: WriteOptions) => Promise<Key>;
-  createMany: (payloads: WritePayload<Item>[], opts?: WriteOptions) => Promise<Key[]>;
+  createOne: (payload: Payload, opts?: WriteOptions) => Promise<Key>;
+  createMany: (payloads: Payload[], opts?: WriteOptions) => Promise<Key[]>;
 
-  updateOne: (key: Key, payload: WritePayload<Item>, opts?: WriteOptions) => Promise<Key>;
-  updateMany: (keys: Key[], payload: WritePayload<Item>, opts?: WriteOptions) => Promise<Key[]>;
-  updateByQuery: (query: Query<Item>, payload: WritePayload<Item>, opts?: WriteOptions) => Promise<Key[]>;
+  updateOne: (key: Key, payload: Payload, opts?: WriteOptions) => Promise<Key>;
+  updateMany: (keys: Key[], payload: Payload, opts?: WriteOptions) => Promise<Key[]>;
+  updateByQuery: (query: Query<Item>, payload: Payload, opts?: WriteOptions) => Promise<Key[]>;
+  /** 逐筆 payload 各自帶 PK，一次更新多筆不同內容 */
+  updateBatch: (payloads: Payload[], opts?: WriteOptions) => Promise<Key[]>;
+
+  /** payload 帶 PK 即 update、無則 create */
+  upsertOne: (payload: Payload, opts?: WriteOptions) => Promise<Key>;
+  upsertMany: (payloads: Payload[], opts?: WriteOptions) => Promise<Key[]>;
+  upsertSingleton: (payload: Payload, opts?: WriteOptions) => Promise<Key>;
 
   deleteOne: (key: Key, opts?: WriteOptions) => Promise<Key>;
   deleteMany: (keys: Key[], opts?: WriteOptions) => Promise<Key[]>;

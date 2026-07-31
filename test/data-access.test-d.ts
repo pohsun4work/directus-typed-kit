@@ -6,7 +6,7 @@ import { describe, expectTypeOf, it } from 'vitest'
 
 import type { ServiceFactories, ServiceFactory } from '../src/data-access/directus-services.js'
 import type { Filter } from '../src/data-access/typed-items.js'
-import type { SchemaKnex } from '../src/data-access/types.js'
+import type { DataAccess, SchemaKnex } from '../src/data-access/types.js'
 import type { Concealed } from '../src/schema/conceal.js'
 import type { KnexView, Timestamp } from '../src/schema/dates.js'
 import type { CollectionItem, TypedItemsService } from 'directus-typed-kit'
@@ -19,7 +19,7 @@ declare module 'directus-typed-kit' {
   }
 }
 
-// kit-style schema（已 branded）：模擬經適配器轉換後的最終 Schema 形狀
+// kit contract 的 Schema：日期標 date brand、conceal 欄標 Concealed、nullable 用 `T | null`
 interface Folder {
   id: string;
   name: string;
@@ -50,6 +50,24 @@ declare const files: TypedItemsService<Schema, 'files'>
 describe('CollectionItem', () => {
   it('解陣列容器取單筆 row 型別', () => {
     expectTypeOf<CollectionItem<Schema, 'files'>>().toEqualTypeOf<FileRow>()
+  })
+
+  it('optional 欄位去 optional 並剝 undefined（讀取結果欄位恆在、值可能 null）', () => {
+    interface OptionalSchema {
+      rows: { id: string; note?: string | null }[];
+      settings: { id: string; label?: string | null }; // singleton 容器同樣正規化
+    }
+    expectTypeOf<CollectionItem<OptionalSchema, 'rows'>>().toEqualTypeOf<{ id: string; note: string | null }>()
+    expectTypeOf<CollectionItem<OptionalSchema, 'settings'>>().toEqualTypeOf<{ id: string; label: string | null }>()
+  })
+
+  it('optional 欄位在明列 fields 與星號兩條讀取路徑上型別一致', async () => {
+    interface OptionalSchema { rows: { id: string; note?: string | null }[] }
+    const rows = {} as TypedItemsService<OptionalSchema, 'rows'>
+    const [listed] = await rows.readByQuery({ fields: ['note'] })
+    const [starred] = await rows.readByQuery({ fields: ['*'] })
+    expectTypeOf(listed!.note).toEqualTypeOf<string | null>()
+    expectTypeOf(starred!.note).toEqualTypeOf<string | null>()
   })
 })
 
@@ -205,13 +223,153 @@ describe('SchemaKnex（raw knex 依 Schema / KnexOverrides typed）', () => {
   })
 })
 
+describe('SchemaTrx（交易內查詢與 SchemaKnex 同樣 typed）', () => {
+  const access = {} as DataAccess<Schema>
+
+  it('交易體的 trx 帶 Schema-aware 簽章（原生 Knex.Transaction 會塌成 any）', async () => {
+    const size = await access.transaction(async (trx) => {
+      const row = await trx('files').select('size_bytes', 'created_at').first()
+      expectTypeOf(row?.created_at).toEqualTypeOf<Date | null | undefined>()
+      // @ts-expect-error 型別非 any，不存在的欄位仍報錯
+      void row?.__definitely_not_a_column
+      return row?.size_bytes
+    })
+    // 回傳值型別透傳，不被 Promise<any> 吃掉
+    expectTypeOf(size).toEqualTypeOf<number | undefined>()
+  })
+
+  it('保留 Knex.Transaction 介面（commit / rollback / savepoint）', async () => {
+    await access.transaction(async (trx) => {
+      expectTypeOf(trx).toMatchTypeOf<Knex.Transaction>()
+    })
+  })
+
+  it('items() 可綁到 kit 沒開的交易（如 hook 事件交易）', () => {
+    const trx = {} as Knex
+    expectTypeOf(access.items('files', { trx })).toEqualTypeOf<TypedItemsService<Schema, 'files'>>()
+    expectTypeOf(access.items('files', { as: 'admin', trx })).toEqualTypeOf<TypedItemsService<Schema, 'files'>>()
+  })
+})
+
+describe('json 欄位（純物件、無 FK 那半 → 非關聯，兩視角都原樣保留）', () => {
+  interface JsonRow {
+    id: string;
+    meta_rec: Record<string, unknown>;
+    meta_obj: { foo: string };
+    meta_obj_null: { foo: string } | null;
+    meta_arr: { a: number }[];
+    meta_unknown_arr: unknown[];
+  }
+  interface JsonSchema { rows: JsonRow[] }
+  const rows = {} as TypedItemsService<JsonSchema, 'rows'>
+
+  it('service 預設讀取原樣保留（不被 FkOf 收成 never）', async () => {
+    const [r] = await rows.readByQuery({})
+    expectTypeOf(r!).toEqualTypeOf<{
+      id: string;
+      meta_rec: Record<string, unknown>;
+      meta_obj: { foo: string };
+      meta_obj_null: { foo: string } | null;
+      meta_arr: { a: number }[];
+      meta_unknown_arr: unknown[];
+    }>()
+  })
+
+  it('明列 fields 同樣原樣保留', async () => {
+    const [r] = await rows.readByQuery({ fields: ['meta_rec', 'meta_arr'] })
+    expectTypeOf(r!).toEqualTypeOf<{ meta_rec: Record<string, unknown>; meta_arr: { a: number }[] }>()
+  })
+
+  it('json 不是關聯，故無 rel.field 這種假 API 面', async () => {
+    // @ts-expect-error meta_rec 是 json 欄位，不可點記選子欄位
+    await rows.readByQuery({ fields: ['meta_rec.anything'] })
+  })
+
+  it('knex 視角保留 json 欄位（DB 就是一欄，select 取得到）', () => {
+    expectTypeOf<KnexView<JsonRow>>().toEqualTypeOf<{
+      id: string;
+      meta_rec: Record<string, unknown>;
+      meta_obj: { foo: string };
+      meta_obj_null: { foo: string } | null;
+      meta_arr: { a: number }[];
+      meta_unknown_arr: unknown[];
+    }>()
+  })
+
+  it('對照組：csv 陣列（元素為純量）仍走 DB 逗號字串', () => {
+    expectTypeOf<KnexView<{ tags: string[] }>['tags']>().toEqualTypeOf<string>()
+  })
+})
+
+describe('conceal 欄位的讀寫兩視角', () => {
+  it('寫入視角保留欄位並脫 brand（建帳號要給 password，遮蔽只發生在讀取）', () => {
+    type Payload = Parameters<typeof files.createOne>[0]
+    expectTypeOf<{ secret: string }>().toMatchTypeOf<Payload>()
+    expectTypeOf<Payload['secret']>().toEqualTypeOf<string | null | undefined>()
+  })
+
+  it('讀取視角仍排除（值非真值，逼呼叫端改走 raw knex）', async () => {
+    const [r] = await files.readByQuery({ limit: 1 })
+    // @ts-expect-error secret 不在 service 讀取視角
+    void r!.secret
+  })
+})
+
+describe('星號混明列點記（同鍵不得撞成 FK & 展開 row 的假交集）', () => {
+  it('fields: [\'*\', \'folder.name\'] → folder 由點記那半接管', async () => {
+    const [r] = await files.readByQuery({ fields: ['*', 'folder.name'] })
+    expectTypeOf(r!.folder).toEqualTypeOf<{ name: string } | null>()
+    // 其餘欄位仍由星號供給
+    expectTypeOf(r!.display_name).toEqualTypeOf<string>()
+  })
+
+  it('動態 fields（union 含 \'*\' 與點記）同樣不塌成 string & {…}', async () => {
+    const dynamic: readonly ('id' | 'folder.name' | '*')[] = ['*']
+    const [r] = await files.readByQuery({ fields: dynamic })
+    expectTypeOf(r!.folder).toEqualTypeOf<{ name: string } | null>()
+  })
+})
+
+describe('Schema 帶 readonly / 日期陣列', () => {
+  it('readonly modifier 不傳染進寫入 payload（hook 內 payload.x = v 是主流寫法）', () => {
+    interface ReadonlySchema { rows: { readonly id: string; readonly status: string }[] }
+    type Payload = Parameters<TypedItemsService<ReadonlySchema, 'rows'>['createOne']>[0]
+    const payload = {} as Payload
+    payload.status = 'x'
+    expectTypeOf<Payload>().toEqualTypeOf<{ id?: string; status?: string }>()
+  })
+
+  it('日期陣列欄位遞迴剝 brand（讀寫都是純字串）', () => {
+    interface DateArraySchema { rows: { id: string; slots: Timestamp[] }[] }
+    type Payload = Parameters<TypedItemsService<DateArraySchema, 'rows'>['createOne']>[0]
+    expectTypeOf<Payload['slots']>().toEqualTypeOf<string[] | undefined>()
+    expectTypeOf<{ slots: string[] }>().toMatchTypeOf<Payload>()
+  })
+})
+
+describe('singleton 與 upsert 方法', () => {
+  it('singleton 容器（裸 Row）可用 readSingleton / upsertSingleton', async () => {
+    interface SingletonSchema { site_settings: { id: string; title: string } }
+    const settings = {} as TypedItemsService<SingletonSchema, 'site_settings'>
+    const current = await settings.readSingleton({ fields: ['title'] })
+    expectTypeOf(current).toEqualTypeOf<Partial<{ title: string }>>()
+    expectTypeOf(settings.upsertSingleton).not.toBeNever()
+  })
+
+  it('upsert / updateBatch / getKeysByQuery 皆 typed', async () => {
+    expectTypeOf(await files.getKeysByQuery({ limit: 1 })).toEqualTypeOf<string[]>()
+    expectTypeOf(await files.upsertOne({ display_name: 'x' })).toEqualTypeOf<string>()
+    expectTypeOf(await files.updateBatch([{ id: 'a', display_name: 'x' }])).toEqualTypeOf<string[]>()
+  })
+})
+
 describe('KnexView nullable 欄位（null 聯集不得誤走關聯分支）', () => {
   interface NullableRow {
     id: string;
     csv_tags: string[] | null; // nullable csv/enum：DB 存逗號字串
     meta: Record<string, unknown> | null; // 純量 JSON 物件（非關聯）
     owner: string | Folder | null; // m2o nullable
-    children: FileTag[] | null; // nullable o2m（FK 在 child 表）
+    children: string[] | FileTag[] | null; // nullable o2m（FK 在 child 表）
   }
 
   it('nullable csv → string | null（不塌成 null）', () => {

@@ -3,8 +3,15 @@
 
 import { createError } from '@directus/errors'
 
-/** definePermission check 不通過時丟出（admin 已在上層放行） */
-export const ForbiddenError = createError<{ reason?: string }>('FORBIDDEN', 'Permission denied', 403)
+/** definePermission check 不通過時丟出（admin 已在上層放行）\
+ *  message 傳 function 才吃得到 extensions —— 傳字串時 @directus/errors 直接用該字串，
+ *  呼叫端給的 `opts.message` 會只留在 extensions.reason、進不了回應 message
+ */
+export const ForbiddenError = createError<{ reason?: string }>(
+  'FORBIDDEN',
+  (ext) => ext?.reason ?? 'Permission denied',
+  403,
+)
 
 /** hook validate() / endpoint body()/query()/params() 驗證失敗 */
 export const ValidationError = createError<{ issues: string[] }>(

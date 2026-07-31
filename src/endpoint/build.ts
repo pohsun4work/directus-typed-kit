@@ -24,26 +24,44 @@ interface NativeEndpointContext {
   logger: Logger;
 }
 
-type AnyHandler = (ctx: RouteContext) => unknown | Promise<unknown>
-
 function getAccountability(req: Request): Accountability | null {
   return (req as Request & { accountability?: Accountability }).accountability ?? null
 }
+
+// guard 只能往 ctx 加欄位，換掉這些會出事：accountability 覆寫後 ctx 與 contextStore 分岔
+// （items({as:'caller'}) 仍用舊身分），存取器被換掉則整條資料路徑失守
+// body / query / params 不在此列 —— 那正是內建 guard 收斂型別的產出
+const GUARD_RESERVED: ReadonlySet<string> = new Set([
+  'req',
+  'res',
+  'accountability',
+  'items',
+  'services',
+  'service',
+  'knex',
+  'transaction',
+  'getSchema',
+])
 
 export function buildEndpointTools<S extends SchemaShape>(
   router: Router,
   context: NativeEndpointContext,
 ): EndpointTools<S> {
+  const logger = context.logger
   const access = createDataAccess<S>({
     knex: context.database as never,
     services: context.services,
     getSchema: context.getSchema,
+    logger,
   })
-  const logger = context.logger
+
+  // 實作層與公開簽章共用同一個 S，handler ctx 不含 guard extras（傳入時多帶欄位不影響 assignable）
+  type Handler = (ctx: RouteContext<S>) => unknown
+  type Options = RouteOptions<readonly Guard<object, S>[]>
 
   /** response schema 驗證輸出：不符 = server bug → 500 + log，不外洩細節 */
   const validateResponse = async (
-    schema: RouteOptions<readonly Guard[]>['response'],
+    schema: Options['response'],
     value: unknown,
   ): Promise<unknown> => {
     // 有 schema 就連 undefined 也驗：handler 漏 return 或 reply 無 body 屬破約，須浮現而非靜默放行
@@ -57,25 +75,30 @@ export function buildEndpointTools<S extends SchemaShape>(
     return result.value
   }
 
-  const makeRoute = (method: 'get' | 'post' | 'put' | 'patch' | 'delete'): Route => {
+  const makeRoute = (method: 'get' | 'post' | 'put' | 'patch' | 'delete'): Route<S> => {
     const verb = ((
       path: string,
-      optionsOrHandler: RouteOptions<readonly Guard[]> | AnyHandler,
-      maybeHandler?: AnyHandler,
+      optionsOrHandler: Options | Handler,
+      maybeHandler?: Handler,
     ) => {
       // 有第三參數才代表第二參數是 options，否則第二參數即 handler
       const hasSeparateHandler = typeof maybeHandler === 'function'
-      const options: RouteOptions<readonly Guard[]> = hasSeparateHandler
-        ? (optionsOrHandler as RouteOptions<readonly Guard[]>)
+      const options: Options = hasSeparateHandler
+        ? (optionsOrHandler as Options)
         : {}
-      const handler = (hasSeparateHandler ? maybeHandler : (optionsOrHandler as AnyHandler))!
+      const handler = (hasSeparateHandler ? maybeHandler : (optionsOrHandler as Handler))!
+
+      // 漏傳 handler 不擋的話：註冊照樣成功、guards 從頭到尾沒掛上，第一個請求進來才炸
+      if (typeof handler !== 'function')
+        throw new TypeError(`directus-typed-kit: route.${method}('${path}') 缺少 handler`)
 
       router[method](path, async (req: Request, res: Response, next: NextFunction) => {
         const accountability = getAccountability(req)
         // guards 與 handler 都跑在此 scope 下，items({as:'caller'}) 才取得本請求身分
         await contextStore.run({ accountability }, async () => {
           try {
-            const ctx: RouteContext = {
+            const ctx: RouteContext<S> = {
+              ...access,
               req,
               res,
               params: req.params,
@@ -87,14 +110,23 @@ export function buildEndpointTools<S extends SchemaShape>(
             // guards 依序 await，回傳物件 merge 進 ctx，throw 即中止並由 catch 轉 HTTP
             for (const guard of options.guards ?? []) {
               const extra = await guard(ctx)
-              if (extra)
+              if (extra) {
+                for (const key of Object.keys(extra)) {
+                  if (GUARD_RESERVED.has(key))
+                    throw new TypeError(`directus-typed-kit: guard 不可覆寫 ctx 的 "${key}"`)
+                }
                 Object.assign(ctx, extra)
+              }
+              // guard 自行寫了 res（redirect / 直接回應）即短路，後續 guard 與 handler 都不該再跑
+              if (res.headersSent)
+                return
             }
 
             const result = await handler(ctx)
 
             // streaming：handler 自行寫 res，回傳 RAW，wrapper 放手
-            if (result === RAW)
+            // 已寫出 res 卻忘了回 RAW 時同樣放手，否則重複寫 header 會把連線打斷成 ECONNRESET
+            if (result === RAW || res.headersSent)
               return
 
             // reply 帶狀態碼與 body，否則整個回傳值即 body、狀態預設 200
@@ -111,7 +143,7 @@ export function buildEndpointTools<S extends SchemaShape>(
           }
         })
       })
-    }) as Route
+    }) as Route<S>
     return verb
   }
 

@@ -15,9 +15,11 @@ export function createEndpoint<S extends SchemaShape = RegisteredSchema>(registe
 }
 
 export { body, params, query, RAW, reply } from './schema-guards.js'
-// Route / RouteContext / RouteOptions / RouteResult 為內部型別（呼叫/inline 即可，不具名）
+// Route / RouteOptions / RouteResult 為內部型別（呼叫/inline 即可，不具名）
 export type {
   EndpointTools,
   Guard,
   Reply,
+  RequestGuard,
+  RouteContext,
 } from './types.js'
