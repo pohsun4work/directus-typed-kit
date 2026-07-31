@@ -340,6 +340,23 @@ describe('Schema 寫 any 的欄位（兩視角都原樣保留、不靜默消失�
   })
 })
 
+// fields 來自 string[] 變數時 F 退化成寬 string，'*' 與 '*.*.*' 同時成立、
+// 明列與星號兩半會一起套用，交出 FK & 展開 row 這種無值可滿足的交集
+describe('fields 退化成寬 string', () => {
+  it('退回 DefaultRead，而非明列與星號的交集', async () => {
+    const dynamic: string[] = ['id']
+    const [r] = await files.readByQuery({ fields: dynamic as never })
+    expectTypeOf(r!).toEqualTypeOf<{
+      id: string;
+      display_name: string;
+      size_bytes: number;
+      created_at: string | null;
+      folder: string | null;
+      tags: string[];
+    }>()
+  })
+})
+
 describe('conceal 欄位的讀寫兩視角', () => {
   it('寫入視角保留欄位並脫 brand（建帳號要給 password，遮蔽只發生在讀取）', () => {
     type Payload = Parameters<typeof files.createOne>[0]

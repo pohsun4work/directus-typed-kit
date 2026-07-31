@@ -181,8 +181,14 @@ type WriteField<T> = IsRelation<T> extends true ? WriteRelation<T> : StripConcea
  */
 export type WritePayload<Item> = { -readonly [K in keyof Item]?: WriteField<Item[K]> }
 
-/** 依 fields 推結果，無 fields 時走預設投影（關聯為 FK） */
-type Read<Item, Q> = Q extends { fields: readonly (infer F extends string)[] } ? ApplyFields<Item, F> : DefaultRead<Item>
+/** F 退化成寬 `string`（fields 來自 `string[]` 變數）時退回 DefaultRead：\
+ *  `'*'` 與 `'*.*.*'` 都 extends string，直接套 ApplyFields 會讓明列與星號兩半同時生效、\
+ *  交出 `FK & 展開 row` 這種無值可滿足的交集
+ */
+type Read<Item, Q>
+  = Q extends { fields: readonly (infer F extends string)[] }
+    ? (string extends F ? DefaultRead<Item> : ApplyFields<Item, F>)
+    : DefaultRead<Item>
 
 /** `emitEvents` 語義同 WriteOptions */
 export interface ReadOptions {
