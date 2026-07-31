@@ -7,5 +7,10 @@ export default defineConfig({
       include: ['test/**/*.test-d.ts'],
     },
     include: ['test/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      reporter: ['text', 'html'],
+    },
   },
 })
