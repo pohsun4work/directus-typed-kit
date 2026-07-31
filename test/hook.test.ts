@@ -483,6 +483,19 @@ describe('註冊期守衛', () => {
       .toThrow(/缺少 handler/)
   })
 
+  // 型別層已擋，這裡驗 cast 繞過時的第二道
+  it('after* 掛授權 gate → 註冊當下 throw（事件觸發時已 commit、ForbiddenError 擋不下任何東西）', () => {
+    const { tools } = setup()
+    expect(() => tools.afterCreate('files', [definePermission(() => true)] as never, () => {}))
+      .toThrow(/授權 gate/)
+  })
+
+  it('action 逃生口同樣擋下授權 gate', () => {
+    const { tools } = setup()
+    expect(() => tools.action('auth.login', [definePermission(() => true)] as never, () => {}))
+      .toThrow(/授權 gate/)
+  })
+
   it('參數順序寫反（handler 在前、middleware 在後）→ throw，不靜默丟棄 gate', () => {
     const { tools } = setup()
     expect(() => tools.beforeCreate('files', (() => {}) as never, [definePermission(() => false)] as never))

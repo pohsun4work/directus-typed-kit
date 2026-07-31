@@ -35,6 +35,7 @@ export type {
   FilterContext,
   FilterHandler,
   FilterMiddleware,
+  GateMiddleware,
   HookTools,
   InitEvent,
   InitMetaMap,
@@ -42,7 +43,6 @@ export type {
   PermissionCheck,
 } from './hook/types.js'
 
-// brand 是消費端標記 Schema 欄位的唯一手段，兩視角分流全靠它觸發
 export type { Concealed } from './schema/conceal.js'
 export type { DateOnly, DateTime, KnexView, TimeOnly, Timestamp } from './schema/dates.js'
 export type { StandardSchemaV1 } from './schema/standard-schema.js'

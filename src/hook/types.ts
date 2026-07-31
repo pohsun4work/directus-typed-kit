@@ -5,8 +5,6 @@ import type { Application, NextFunction, Request, Response } from 'express'
 
 type Collection<S extends SchemaShape> = keyof S & string
 
-// ============ 事件 meta ============
-
 export interface EventMeta {
   event: string;
   collection: string;
@@ -34,9 +32,6 @@ export interface FilterContext<S extends SchemaShape = RegisteredSchema> extends
   database: SchemaKnex<S>;
 }
 
-// ============ handler ============
-
-/** payload 型 handler 的共同形狀，差別只在 ctx（filter 帶交易、middleware 只保證共同欄位） */
 type PayloadHandler<T, Ctx> = (
   payload: WritePayload<T>,
   meta: EventMeta,
@@ -45,24 +40,35 @@ type PayloadHandler<T, Ctx> = (
 
 /** before* 的 handler：自動 return（不回傳沿用原 payload）
  *
- * payload 形狀同 WritePayload（關聯收 FK 或巢狀 partial、日期 string），非展開後的 read row
+ * payload 形狀同 WritePayload（關聯收 FK 或巢狀 partial、日期 string），非展開後的 read row\
  * ── filter 在 PayloadService 收巢狀成 FK 之前觸發，拿到的是 createOne/updateOne 原始輸入
  */
 export type FilterHandler<T, S extends SchemaShape = RegisteredSchema> = PayloadHandler<T, FilterContext<S>>
 
-/** beforeDelete 的 handler：第一參數是正規化的 keys（delete 無 row payload） */
+/** delete 無 row payload，故第一參數改給正規化後的 keys */
 export type DeleteHandler<S extends SchemaShape = RegisteredSchema> = (keys: string[], meta: EventMeta, context: FilterContext<S>) => void | Promise<void>
 
-/** after* 的 handler：寫入後副作用，無回傳 */
 export type ActionHandler<T = Record<string, unknown>> = (meta: ActionMeta<T>, context: EventContext) => void | Promise<void>
-
-// ============ middleware ============
 
 /** middleware 包裝的 next：同一組 middleware 供 before* 與 after* 共用，故 ctx 不能假設有 `database`（after* 沒有） */
 export type MiddlewareHandler<T> = PayloadHandler<T, EventContext>
 
-/** filter 中介層：包住 next、回傳新 handler，進 middleware 陣列依書寫順序執行 */
+/** middleware 陣列依書寫順序執行：index 0 最外層、最先跑 */
 export type FilterMiddleware = <T>(next: MiddlewareHandler<T>) => MiddlewareHandler<T>
+
+type GateBrand = Record<typeof import('./middleware.js').GATE, true>
+
+/** 授權型 middleware 的標記，after* / action 的簽章據此擋下 */
+export type GateMiddleware = FilterMiddleware & GateBrand
+
+/** 把 gate 映成說明字串，錯誤訊息即指出該改掛哪裡\
+ *  after* 觸發時 mutation 已 commit，gate 丟的 ForbiddenError 攔不下任何東西、只會被記進 logger
+ */
+type NoGate<M extends readonly unknown[]> = {
+  [I in keyof M]: M[I] extends GateBrand
+    ? '授權 gate 只能掛 before* / filter：after* 時 mutation 已 commit，throw 擋不下任何東西'
+    : M[I];
+}
 
 export type PermissionCheck = (args: {
   payload: Record<string, unknown>;
@@ -70,11 +76,8 @@ export type PermissionCheck = (args: {
   accountability: Accountability | null;
 }) => boolean | Promise<boolean>
 
-// ============ Hook tools ============
-
-/** 各 init 時點 Directus 注入的 meta：app/routes/middlewares 系列拿 Express app
- *  （唯一能在 router 掛載前插 middleware 的把手），cli 系列拿 commander program
- *  program 無對應 @types 故留 unknown，使用端自行 cast
+/** app/routes/middlewares 系列拿的 Express app 是唯一能在 router 掛載前插 middleware 的把手\
+ *  cli 系列的 commander program 無對應 @types 故留 unknown，使用端自行 cast
  */
 export interface InitMetaMap {
   'app.before': { app: Application };
@@ -91,8 +94,6 @@ export interface InitMetaMap {
 
 export type InitEvent = keyof InitMetaMap
 
-// ============ route middleware mounting ============
-
 /** 同 express PathParams，不直接 import（它在 express-serve-static-core、匯出位置脆弱） */
 type RoutePath = string | RegExp | Array<string | RegExp>
 
@@ -106,35 +107,27 @@ type RouteErrorHandler = (err: unknown, req: MaybeAuthedRequest, res: Response, 
 
 export interface HookTools<S extends SchemaShape> extends DataAccess<S> {
   // before* 多一條「只給 middleware、省略 handler」多載：純 gate（throw 擋下、否則 payload 原樣放行）
-  // 不與其他多載衝突——第二參數是陣列在 runtime 唯一代表 middleware
-  // after* 不提供此形式：寫入後的 handler 即本體，middleware-only 無語意（見 build.ts registerAction）
+  // after* 不提供 —— 寫入後的 handler 即本體，middleware-only 無語意
   beforeCreate: (<C extends Collection<S>>(collection: C, handler: FilterHandler<CollectionItem<S, C>, S>) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[]) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[], handler: FilterHandler<CollectionItem<S, C>, S>) => void);
   beforeUpdate: (<C extends Collection<S>>(collection: C, handler: FilterHandler<CollectionItem<S, C>, S>) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[]) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[], handler: FilterHandler<CollectionItem<S, C>, S>) => void);
   beforeDelete: (<C extends Collection<S>>(collection: C, handler: DeleteHandler<S>) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[]) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[], handler: DeleteHandler<S>) => void);
 
-  afterCreate: (<C extends Collection<S>>(collection: C, handler: ActionHandler<CollectionItem<S, C>>) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[], handler: ActionHandler<CollectionItem<S, C>>) => void);
-  afterUpdate: (<C extends Collection<S>>(collection: C, handler: ActionHandler<CollectionItem<S, C>>) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[], handler: ActionHandler<CollectionItem<S, C>>) => void);
-  afterDelete: (<C extends Collection<S>>(collection: C, handler: ActionHandler<CollectionItem<S, C>>) => void) & (<C extends Collection<S>>(collection: C, middleware: FilterMiddleware[], handler: ActionHandler<CollectionItem<S, C>>) => void);
+  afterCreate: (<C extends Collection<S>>(collection: C, handler: ActionHandler<CollectionItem<S, C>>) => void) & (<C extends Collection<S>, const M extends readonly FilterMiddleware[]>(collection: C, middleware: M & NoGate<M>, handler: ActionHandler<CollectionItem<S, C>>) => void);
+  afterUpdate: (<C extends Collection<S>>(collection: C, handler: ActionHandler<CollectionItem<S, C>>) => void) & (<C extends Collection<S>, const M extends readonly FilterMiddleware[]>(collection: C, middleware: M & NoGate<M>, handler: ActionHandler<CollectionItem<S, C>>) => void);
+  afterDelete: (<C extends Collection<S>>(collection: C, handler: ActionHandler<CollectionItem<S, C>>) => void) & (<C extends Collection<S>, const M extends readonly FilterMiddleware[]>(collection: C, middleware: M & NoGate<M>, handler: ActionHandler<CollectionItem<S, C>>) => void);
 
-  // 逃生口的純 middleware 對稱同 before*／after*：
-  // filter 屬 before（可 throw 擋下）→ 純 gate 可省略 handler
-  // action 屬 after（handler 即本體）→ 不提供 middleware-only
   /** before / after 未覆蓋的事件（items.read、auth.*、request.*、server.*…）保留全名 */
   filter: ((event: string, handler: (payload: unknown, meta: EventMeta, ctx: FilterContext<S>) => unknown) => void) & ((event: string, middleware: FilterMiddleware[]) => void) & ((event: string, middleware: FilterMiddleware[], handler: (payload: unknown, meta: EventMeta, ctx: FilterContext<S>) => unknown) => void);
-  action: ((event: string, handler: ActionHandler) => void) & ((event: string, middleware: FilterMiddleware[], handler: ActionHandler) => void);
+  action: ((event: string, handler: ActionHandler) => void) & (<const M extends readonly FilterMiddleware[]>(event: string, middleware: M & NoGate<M>, handler: ActionHandler) => void);
 
   schedule: (cron: string, handler: () => void | Promise<void>) => void;
   init: <E extends InitEvent>(event: E, handler: (meta: InitMetaMap[E]) => void) => void;
 
-  // init('routes.before'/'routes.after', ({app}) => app.use(...)) 的常用包裝
-  // handler 型別由此釘死（req/res/next 不再吃 app.use 多載的浮動推斷），其餘 init 時點用 init 逃生口
-  /** routes.before：core 路由前掛 guard / 攔截（authenticate 下游、req.accountability 必有）
-   *  省略 path → app 全域，給 path → 只攔該前綴（如 '/files'，須對齊 Directus 核心路由）
-   */
+  // 包成專用簽章才能把 handler 型別釘死（req/res/next 不再吃 app.use 多載的浮動推斷）
+  // 其餘 init 時點走 init 逃生口
+  /** 省略 path → app 全域，給 path → 只攔該前綴（如 '/files'，須對齊 Directus 核心路由） */
   beforeRoutes: ((handler: RouteGuard) => void) & ((path: RoutePath, handler: RouteGuard) => void);
-  /** routes.after：掛 error handler（上游 next(err) 時觸發）
-   *  錯誤可能源於 authenticate 本身 → req.accountability 可能無（optional）
-   *  省略 path → app 全域，給 path → 只接該前綴的錯誤
+  /** 上游 next(err) 時觸發，省略 path → app 全域，給 path → 只接該前綴的錯誤\
    *  404 fallback（一般 3 參數 terminal）罕用、不在此暴露，需要時走 init('routes.after')
    */
   afterRoutes: ((handler: RouteErrorHandler) => void) & ((path: RoutePath, handler: RouteErrorHandler) => void);

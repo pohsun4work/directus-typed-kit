@@ -170,4 +170,6 @@ await transaction(async (trx) => {
 
 `as: 'caller'` 在沒有事件 / 請求 scope 時（`schedule`、或被丟出 async context 的 callback）退為**匿名**身分，不是 `null`——`null` 在 Directus 是 system、繞過全部 ACL。要 system 權限請顯式寫 `{ as: 'system' }`。
 
+`definePermission` 只掛得上 `before*` / `filter`：after\* 事件觸發時 mutation 已 commit，gate 丟的 `ForbiddenError` 擋不下任何東西（只會讓該 handler 不跑）。掛到 `after*` / `action` 是型別錯誤，cast 繞過的話註冊當下就 throw。
+
 `validate(schema)` 的 parsed 結果會**疊回**原 payload 而非取代，故 schema 只列要驗的欄位即可，未列的不會被 zod / valibot 的預設 strip 洗掉。

@@ -3,7 +3,7 @@
 
 import { body } from 'directus-typed-kit'
 import { createEndpoint } from 'directus-typed-kit/endpoint'
-import { createHook, definePermission } from 'directus-typed-kit/hook'
+import { createHook, definePermission, validate } from 'directus-typed-kit/hook'
 import { describe, expectTypeOf, it } from 'vitest'
 
 import type { Timestamp } from '../src/schema/dates.js'
@@ -162,6 +162,42 @@ describe('before* 省略 handler 多載（純 middleware gate）', () => {
     createHook((tools) => {
       // @ts-expect-error afterCreate 無 middleware-only 多載
       tools.afterCreate('files', [definePermission(() => true)])
+    })
+  })
+})
+
+describe('授權 gate 只掛得上 before* / filter', () => {
+  const schema = {} as StandardSchemaV1<unknown, { n: number }>
+
+  it('after* 帶 gate → 型別錯（事件觸發時已 commit，throw 擋不下任何東西）', () => {
+    createHook((tools) => {
+      // @ts-expect-error definePermission 不可掛 afterCreate
+      tools.afterCreate('files', [definePermission(() => true)], () => {})
+      // @ts-expect-error definePermission 不可掛 afterUpdate
+      tools.afterUpdate('files', [definePermission(() => true)], () => {})
+      // @ts-expect-error definePermission 不可掛 afterDelete
+      tools.afterDelete('files', [definePermission(() => true)], () => {})
+    })
+  })
+
+  it('action 逃生口（屬 after）同樣擋下', () => {
+    createHook((tools) => {
+      // @ts-expect-error definePermission 不可掛 action
+      tools.action('files.items.create', [definePermission(() => true)], () => {})
+    })
+  })
+
+  it('非授權型 middleware（validate）在 after* 照常可用', () => {
+    createHook((tools) => {
+      tools.afterCreate('files', [validate(schema)], () => {})
+      tools.action('files.items.create', [validate(schema)], () => {})
+    })
+  })
+
+  it('before* / filter 仍接受 gate', () => {
+    createHook((tools) => {
+      tools.beforeCreate('files', [definePermission(() => true)], () => {})
+      tools.filter('items.read', [definePermission(() => true)], () => {})
     })
   })
 })

@@ -1,12 +1,6 @@
-// 把原生 filter/action 包成時序命名的 HookTools（beforeCreate / afterUpdate…）
-// 包裝層負責：
-// - 正規化 keys（吸收 native 在 create/update/delete 的不一致）
-// - 套 middleware、filter 的自動 return
-// - 把本次事件 scope（accountability + schema + filter 的交易）run 進 contextStore 供 items() 讀
-
 import { contextStore } from '../core/context.js'
 import { createDataAccess } from '../data-access/access.js'
-import { applyFilterMiddleware } from './middleware.js'
+import { applyFilterMiddleware, GATE } from './middleware.js'
 
 import type { Accountability, Logger, SchemaOverview } from '../core/types.js'
 import type { SchemaShape } from '../data-access/typed-items.js'
@@ -37,7 +31,7 @@ interface NativeEventMeta {
 interface NativeEventContext {
   accountability?: unknown;
   schema?: SchemaOverview;
-  /** filter 事件是本次 mutation 的交易，action 事件的只是全域連線故不外露（見 types 的 FilterContext） */
+  /** filter 事件是本次 mutation 的交易，action 事件的只是全域連線故不外露 */
   database?: unknown;
 }
 interface NativeFilterEvents {
@@ -67,6 +61,12 @@ function normalizeKeys(payload: unknown, meta: NativeEventMeta, isDelete: boolea
   if (isDelete && Array.isArray(payload))
     return payload.map(String)
   return toKeys(meta.keys, meta.key)
+}
+
+/** 型別層已擋，此處是 cast 繞過時的第二道；擋在註冊期而非事件觸發時，訊息才指向呼叫端 */
+function assertNoGate(middleware: FilterMiddleware[], event: string): void {
+  if (middleware.some((m) => (m as Partial<Record<typeof GATE, true>>)[GATE]))
+    throw new TypeError(`directus-typed-kit: "${event}" 的 middleware 含授權 gate，請改掛對應的 before* / filter`)
 }
 
 function makeEventMeta(meta: NativeEventMeta, event: string, collection: string, keys: string[]): EventMeta {
@@ -103,7 +103,6 @@ export function buildHookTools<S extends SchemaShape>(
     return { middleware: a, handler: b }
   }
 
-  // before* / filter：寫入前，可改 payload / throw 擋下
   const registerFilter = (
     event: string,
     collection: string,
@@ -144,19 +143,18 @@ export function buildHookTools<S extends SchemaShape>(
 
         const composed = applyFilterMiddleware(middleware, base)
         const out = await composed(payload as Partial<unknown>, eventMeta, filterCtx)
-        // 自動 return：不回傳 → 沿用 middleware 處理後的 payload（delete 即 keys 陣列）
         return out === undefined ? processed : out
       })
     })
   }
 
-  // after* / action 逃生口：寫入後才跑的副作用
   const registerAction = (
     event: string,
     collection: string,
     middleware: FilterMiddleware[],
     handler: ActionHandler,
   ): void => {
+    assertNoGate(middleware, event)
     events.action(event, async (meta, ctx) => {
       const accountability = (ctx?.accountability ?? null) as EventContext['accountability']
       await contextStore.run({ accountability, schema: ctx?.schema }, async () => {
@@ -192,7 +190,6 @@ export function buildHookTools<S extends SchemaShape>(
     = (verb: 'create' | 'update' | 'delete') =>
       (collection: string, a: FilterMiddleware[] | FilterHandler<unknown, S> | DeleteHandler<S>, b?: FilterHandler<unknown, S> | DeleteHandler<S>): void => {
         const { middleware, handler } = splitArgs(a, b)
-        // 純 middleware gate（如 definePermission）可省略 handler：補 no-op 收尾，payload 原樣放行
         registerFilter(`${collection}.items.${verb}`, collection, middleware, handler ?? (() => {}), verb === 'delete')
       }
 
@@ -215,7 +212,7 @@ export function buildHookTools<S extends SchemaShape>(
         )
       }
 
-  // beforeRoutes / afterRoutes：每請求包一層 contextStore（帶 req.accountability），讓 handler 內 items({as:'caller'}) 取得呼叫者身分
+  // 每請求包一層 contextStore（帶 req.accountability），handler 內 items({as:'caller'}) 才取得呼叫者身分
   // wrapped 的固定 arity 決定 express 分派：3 參數=一般 guard、4 參數=error handler（req 在第 2 參）
   const mountRoutes = (phase: 'routes.before' | 'routes.after') =>
     (a: unknown, b?: unknown): void => {

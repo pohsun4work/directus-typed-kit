@@ -1,14 +1,13 @@
-// 兩個內建 FilterMiddleware（validate / definePermission）與套用器
-// 套用順序刻意對齊 endpoint guards（書寫順序＝執行順序），呼叫端心智模型一致
-
 import { ForbiddenError, ValidationError } from '../core/errors.js'
 import { runStandard } from '../schema/standard-schema.js'
 
 import type { WritePayload } from '../data-access/typed-items.js'
 import type { StandardSchemaV1 } from '../schema/standard-schema.js'
-import type { FilterMiddleware, MiddlewareHandler, PermissionCheck } from './types.js'
+import type { FilterMiddleware, GateMiddleware, MiddlewareHandler, PermissionCheck } from './types.js'
 
-/** 套用順序＝書寫順序：index 0 最外層、最先執行 */
+/** 授權 middleware 的 runtime 標記，讓 after* / action 在註冊期就擋下（型別被 cast 繞過時的第二道） */
+export const GATE: unique symbol = Symbol('directus-typed-kit:gate')
+
 export function applyFilterMiddleware<T>(
   middleware: FilterMiddleware[],
   handler: MiddlewareHandler<T>,
@@ -19,8 +18,7 @@ export function applyFilterMiddleware<T>(
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** Standard Schema 驗證 middleware：parse payload，不符 throw（400），成功把 parsed 往下傳\
- *  parsed 疊回原 payload 而非取代：schema 通常只列要驗的欄位，而 zod / valibot 預設 strip 未列的，
+/** parsed 疊回原 payload 而非取代：schema 通常只列要驗的欄位，而 zod / valibot 預設 strip 未列的，\
  *  直接取代會讓 auto-return 把縮水的 payload 交回 Directus、未列欄位靜默寫不進去
  */
 export function validate<Sc extends StandardSchemaV1>(schema: Sc): FilterMiddleware {
@@ -37,15 +35,14 @@ export function validate<Sc extends StandardSchemaV1>(schema: Sc): FilterMiddlew
     }) as FilterMiddleware
 }
 
-/** 唯一授權接縫：admin 與 system 自動放行、check() false → throw Forbidden、true → 放行\
- *  handler body 仍照常執行（admin 也要雜湊密碼 / 驗檔名），只有授權那層略過\
+/** admin 與 system 自動放行，但只略過授權那層 —— handler body 仍照常執行（admin 也要雜湊密碼 / 驗檔名）\
  *  accountability 為 null 即 system（`as:'system'` 或 Directus 內部流程），權限等同 admin 故一併放行
  */
 export function definePermission(
   check: PermissionCheck,
   opts?: { message?: string },
-): FilterMiddleware {
-  return (<T>(next: MiddlewareHandler<T>): MiddlewareHandler<T> =>
+): GateMiddleware {
+  const gate = (<T>(next: MiddlewareHandler<T>): MiddlewareHandler<T> =>
     async (payload, meta, ctx) => {
       if (ctx.accountability === null || ctx.accountability.admin)
         return next(payload, meta, ctx)
@@ -58,4 +55,5 @@ export function definePermission(
         throw new ForbiddenError({ reason: opts?.message })
       return next(payload, meta, ctx)
     }) as FilterMiddleware
+  return Object.assign(gate, { [GATE]: true as const })
 }
