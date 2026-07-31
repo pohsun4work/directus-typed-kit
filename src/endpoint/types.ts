@@ -4,10 +4,12 @@ import type { DataAccess } from '../data-access/types.js'
 import type { InferOutput, StandardSchemaV1 } from '../schema/standard-schema.js'
 import type { Request, Response, Router } from 'express'
 
-/** reply() 的回傳 sentinel，帶私有 REPLY brand 使手寫 { status, body } 無法冒充 */
-export type Reply = {
+/** reply() 的回傳 sentinel，帶私有 REPLY brand 使手寫 { status, body } 無法冒充\
+ *  `B` 讓 response schema 連帶檢查 reply 的 body（省略 body 時為 undefined、對任何 schema 都放行）
+ */
+export type Reply<B = unknown> = {
   status: number;
-  body?: unknown;
+  body?: B;
 } & Record<typeof import('./schema-guards.js').REPLY, true>
 
 /** unknown 已吸收一切（含 RAW sentinel），單獨列聯集只是誤導 */
@@ -30,15 +32,13 @@ export interface RouteContext<S extends SchemaShape = RegisteredSchema> extends 
 export type Guard<Extra extends object = Record<never, never>, S extends SchemaShape = RegisteredSchema>
   = (ctx: RouteContext<S>) => Extra | void | Promise<Extra | void>
 
-/** ctx 上與 Schema 無關的請求欄位 */
 type RequestFields = Pick<RouteContext<SchemaShape>, 'body' | 'query' | 'params'>
 
-/** 內建 guard（body / query / params）：ctx 參數只吃請求欄位，不碰 DataAccess\
- *  綁 `RouteContext<S>` 的話會被 S 逆變釘死在註冊的 Schema 上，`createEndpoint<別的Schema>` 一用即不 assignable
+/** ctx 參數只吃請求欄位、不碰 DataAccess：綁 `RouteContext<S>` 會被 S 逆變釘死在註冊的 Schema 上，\
+ *  `createEndpoint<別的Schema>` 一用即不 assignable
  */
 export type RequestGuard<Extra extends object> = (ctx: RequestFields) => Promise<Extra>
 
-/** guard 回傳的 extras，`void` 與條件式不回傳的分支不貢獻欄位 */
 type ExtraOf<R> = [Exclude<Awaited<R>, void | undefined>] extends [never]
   ? Record<never, never>
   : Exclude<Awaited<R>, void | undefined>
@@ -50,16 +50,27 @@ export type MergeExtras<G extends readonly unknown[]>
     ? (H extends (...args: never[]) => infer R ? ExtraOf<R> : Record<never, never>) & MergeExtras<Rest>
     : Record<never, never>
 
-export interface RouteOptions<G extends readonly unknown[]> {
+export interface RouteOptions<G extends readonly unknown[], R extends StandardSchemaV1 = never> {
   guards?: G;
-  response?: StandardSchemaV1;
+  response?: R;
 }
 
+/** 給了 response schema 就把 handler 回傳釘在它的 output 上，否則宣告與實作在同一個呼叫裡卻只在 runtime 撞 500\
+ *  RAW 例外：handler 自行寫 res，wrapper 既不驗證也不序列化
+ *
+ * RAW 那支寫寬 `symbol` 而非 `typeof RAW`：Route 是多載介面，`() => RAW` 在多載解析下\
+ * 會先被推成 `() => symbol`，釘死 unique symbol 反而讓正常寫法編譯不過
+ */
+type RouteReturn<R>
+  = [R] extends [never]
+    ? RouteResult
+    : InferOutput<R> | Reply<InferOutput<R>> | symbol
+
 export interface Route<S extends SchemaShape = RegisteredSchema> {
-  <const G extends readonly Guard<object, S>[]>(
+  <const G extends readonly Guard<object, S>[], R extends StandardSchemaV1 = never>(
     path: string,
-    options: RouteOptions<G>,
-    handler: (ctx: RouteContext<S> & MergeExtras<G>) => RouteResult | Promise<RouteResult>,
+    options: RouteOptions<G, R>,
+    handler: (ctx: RouteContext<S> & MergeExtras<G>) => RouteReturn<R> | Promise<RouteReturn<R>>,
   ): void;
   (path: string, handler: (ctx: RouteContext<S>) => RouteResult | Promise<RouteResult>): void;
 }
@@ -71,5 +82,4 @@ export interface EndpointTools<S extends SchemaShape> extends DataAccess<S> {
   accountability: (req: Request) => Accountability | null;
 }
 
-/** guard schema 推導輔助，internal */
 export type SchemaGuardOutput<Sc> = InferOutput<Sc>

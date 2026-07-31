@@ -1,7 +1,7 @@
 // endpoint domain 型別測試（vitest --typecheck）：guard 回傳物件 merge 進 handler ctx（型別累加）、
 // guard ctx 自帶 DataAccess（寫在外部模組的 guard 也能查資料）
 
-import { body, reply } from 'directus-typed-kit'
+import { body, RAW, reply } from 'directus-typed-kit'
 import { describe, expectTypeOf, it } from 'vitest'
 
 import type {
@@ -80,6 +80,45 @@ describe('MergeExtras 對各種 guard 形狀', () => {
     }, (ctx) => {
       expectTypeOf(ctx.body).toEqualTypeOf<{ n: number }>()
       expectTypeOf(ctx.id).toEqualTypeOf<string>()
+    })
+  })
+})
+
+// 宣告與實作在同一個呼叫裡，接不起來的話只有 runtime 的 500 會說話
+describe('response schema 綁定 handler 回傳', () => {
+  const tools = {} as EndpointTools<Schema>
+  const schema = {} as StandardSchemaV1<unknown, { ok: boolean }>
+
+  it('形狀對得上即通過（裸值 / reply / RAW / 空 body）', () => {
+    tools.route.get('/a', { response: schema }, () => ({ ok: true }))
+    tools.route.get('/b', { response: schema }, () => reply(201, { ok: true }))
+    // RAW：handler 自行寫 res，wrapper 既不驗證也不序列化
+    tools.route.get('/c', { response: schema }, () => RAW)
+    // 空 body 不受形狀約束（204 本就不帶 body）
+    tools.route.get('/d', { response: schema }, () => reply(204))
+  })
+
+  it('形狀不符 → 編譯錯', () => {
+    // @ts-expect-error 回傳形狀與 response schema 不符
+    tools.route.get('/e', { response: schema }, () => ({ totally: 'wrong' }))
+    // @ts-expect-error reply 的 body 與 response schema 不符
+    tools.route.get('/f', { response: schema }, () => reply(201, 'not-an-object'))
+    // @ts-expect-error 有 response schema 卻漏 return
+    tools.route.get('/g', { response: schema }, () => {})
+  })
+
+  it('無 response schema 時回傳不受限', () => {
+    tools.route.get('/h', { guards: [] }, () => ({ anything: 1 }))
+    tools.route.get('/i', () => undefined)
+  })
+
+  it('與 guards 併用時 extras 仍累加', () => {
+    tools.route.get('/j', {
+      guards: [async () => ({ who: 'me' as const })],
+      response: schema,
+    }, (ctx) => {
+      expectTypeOf(ctx.who).toEqualTypeOf<'me'>()
+      return { ok: true }
     })
   })
 })

@@ -1,5 +1,3 @@
-// 把原生 express Router 包成 route.get/post… + guards + Standard Schema + 回傳語義 wrapper
-
 import { contextStore } from '../core/context.js'
 import { ResponseValidationError } from '../core/errors.js'
 import { createDataAccess } from '../data-access/access.js'
@@ -9,6 +7,7 @@ import { isReply, RAW } from './schema-guards.js'
 import type { Accountability, Logger, SchemaOverview } from '../core/types.js'
 import type { SchemaShape } from '../data-access/typed-items.js'
 import type { GetSchemaOptions } from '../data-access/types.js'
+import type { StandardSchemaV1 } from '../schema/standard-schema.js'
 import type {
   EndpointTools,
   Guard,
@@ -58,9 +57,8 @@ export function buildEndpointTools<S extends SchemaShape>(
 
   // 實作層與公開簽章共用同一個 S，handler ctx 不含 guard extras（傳入時多帶欄位不影響 assignable）
   type Handler = (ctx: RouteContext<S>) => unknown
-  type Options = RouteOptions<readonly Guard<object, S>[]>
+  type Options = RouteOptions<readonly Guard<object, S>[], StandardSchemaV1>
 
-  /** response schema 驗證輸出：不符 = server bug → 500 + log，不外洩細節 */
   const validateResponse = async (
     schema: Options['response'],
     value: unknown,
@@ -82,7 +80,6 @@ export function buildEndpointTools<S extends SchemaShape>(
       optionsOrHandler: Options | Handler,
       maybeHandler?: Handler,
     ) => {
-      // 有第三參數才代表第二參數是 options，否則第二參數即 handler
       const hasSeparateHandler = typeof maybeHandler === 'function'
       const options: Options = hasSeparateHandler
         ? (optionsOrHandler as Options)
@@ -108,7 +105,6 @@ export function buildEndpointTools<S extends SchemaShape>(
               accountability,
             }
 
-            // guards 依序 await，回傳物件 merge 進 ctx，throw 即中止並由 catch 轉 HTTP
             for (const guard of options.guards ?? []) {
               const extra = await guard(ctx)
               if (extra) {
@@ -130,7 +126,6 @@ export function buildEndpointTools<S extends SchemaShape>(
             if (result === RAW || res.headersSent)
               return
 
-            // reply 帶狀態碼與 body，否則整個回傳值即 body、狀態預設 200
             const replying = isReply(result)
             const status = replying ? result.status : 200
             const validated = await validateResponse(options.response, replying ? result.body : result)

@@ -120,6 +120,8 @@ export const shareEndpoint = createEndpoint(({ route, knex }) => {
 
 guard（`body` / `query` / `params`）與 hook 的 `validate` 都吃 Standard Schema，實作（zod / valibot / arktype）自選。
 
+`{ response: schema }` 除了在 runtime 驗回應，也把 handler 回傳型別釘在 schema 的 output 上：形狀不符、`reply()` 的 body 不符、漏 return 都是編譯錯，不必等 runtime 撞 500。`reply(status)`（空 body）與 `RAW`（handler 自行寫 `res`、wrapper 不驗證也不序列化）不受此限。
+
 guard ctx 與 handler ctx 一樣自帶存取器，故「查參與者」「驗擁有權」這類資料型授權可寫成可重用 guard、不必降級成 handler 內 helper：
 
 ```ts

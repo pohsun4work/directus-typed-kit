@@ -276,7 +276,8 @@ describe('response 契約', () => {
 
   it('通過 → 回應用 parsed 值（非 handler 原值）', async () => {
     const { tools, call } = setup()
-    const schema = schemaOf(() => ({ value: { normalized: true } }))
+    // 兩個欄位都在 schema 的 output 上，handler 才回得出「與 parsed 不同」的原值
+    const schema = schemaOf<{ raw?: boolean; normalized?: boolean }>(() => ({ value: { normalized: true } }))
     tools.route.get('/a', { response: schema }, () => ({ raw: true }))
     const { res } = await call('get /a')
     expect(res.payload).toEqual({ normalized: true })

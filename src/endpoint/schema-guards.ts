@@ -1,5 +1,3 @@
-// endpoint 這側的 Standard Schema guard（body/query/params）＋ 回傳語義 sentinel（reply / RAW）
-
 import { ValidationError } from '../core/errors.js'
 import { runStandard } from '../schema/standard-schema.js'
 
@@ -12,10 +10,10 @@ export const RAW: unique symbol = Symbol('directus-typed-kit:raw')
 /** Reply 的 brand key：unique symbol 讓 Reply 型別能綁定它，手寫物件無此 key 即無法冒充 */
 export const REPLY: unique symbol = Symbol('directus-typed-kit:reply')
 
-/** 指定狀態碼回應，取代手動 res.status().json()
- * body 省略 → 空 body（如 204）
- */
-export function reply(status: number, body?: unknown): Reply {
+/** body 省略 → 空 body（如 204），且 `Reply<undefined>` 對任何 response schema 都放行 */
+export function reply(status: number): Reply<undefined>
+export function reply<B>(status: number, body: B): Reply<B>
+export function reply(status: number, body?: unknown): Reply<unknown> {
   return { [REPLY]: true, status, body }
 }
 
@@ -23,7 +21,6 @@ export function isReply(value: unknown): value is Reply {
   return typeof value === 'object' && value !== null && (value as Record<symbol, unknown>)[REPLY] === true
 }
 
-/** 驗 ctx 上的某欄位（body / query / params），成功回 { [key]: typed }，失敗 throw 400 */
 function makeSchemaGuard<K extends 'body' | 'query' | 'params'>(key: K) {
   return <Sc extends StandardSchemaV1>(schema: Sc): RequestGuard<{ [P in K]: InferOutput<Sc> }> =>
     async (ctx) => {
