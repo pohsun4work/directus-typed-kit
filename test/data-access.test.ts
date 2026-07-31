@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { createDataAccess } from '../src/data-access/access.js'
 import { collectionToServiceKey, serviceKeyToCollection } from '../src/data-access/directus-services.js'
 
+import type { GetSchemaOptions } from '../src/data-access/types.js'
 import type { Knex } from 'knex'
 
 describe('serviceKeyToCollection', () => {
@@ -57,6 +58,7 @@ describe('transaction 的 knex 解析', () => {
   function setup() {
     const log: string[] = []
     const seen: string[] = []
+    const schemaOptions: (GetSchemaOptions | undefined)[] = []
     const access = createDataAccess<Schema>({
       knex: makeKnex('root', log),
       services: {
@@ -70,11 +72,14 @@ describe('transaction 的 knex 解析', () => {
           }
         },
       },
-      getSchema: async () => ({}),
+      getSchema: async (options) => {
+        schemaOptions.push(options)
+        return {}
+      },
       logger: console as unknown as Parameters<typeof createDataAccess>[0]['logger'],
     })
-    // log 記開交易的 base、seen 記 ItemsService 實際收到的連線
-    return { access, log, seen }
+    // log 記開交易的 base、seen 記 ItemsService 實際收到的連線、schemaOptions 記 getSchema 收到的 options
+    return { access, log, seen, schemaOptions }
   }
 
   it('交易外的 items() 走 top-level 連線', async () => {
@@ -109,6 +114,22 @@ describe('transaction 的 knex 解析', () => {
       await access.items('files', { trx: explicit }).readByQuery({})
     })
     expect(seen).toEqual(['explicit'])
+  })
+
+  // schema 走全域連線的話，交易內建表（CollectionsService / FieldsService）後同交易再 items('新表')
+  // 讀的是尚未 commit 的 directus_collections / directus_fields，解析不到
+  it('交易內解析 schema 走同一條交易', async () => {
+    const { access, schemaOptions } = setup()
+    await access.transaction(async () => {
+      await access.items('files').readByQuery({})
+    })
+    expect(schemaOptions).toEqual([{ database: expect.objectContaining({ __name: 'root>trx' }) }])
+  })
+
+  it('交易外不帶 options', async () => {
+    const { access, schemaOptions } = setup()
+    await access.items('files').readByQuery({})
+    expect(schemaOptions).toEqual([undefined])
   })
 
   it('交易體回傳值原樣透傳', async () => {

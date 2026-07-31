@@ -1,7 +1,5 @@
 // items()/service() 註冊期就解構（closure 綁定一次），但 as:'caller' 需要本次事件/請求的真實 accountability
-// 故用 AsyncLocalStorage 帶 per-event scope（accountability + schema）
-// hook/endpoint 包裝層各 run 一個 scope，items({ as:'caller' }) 在方法呼叫時讀回
-// 無 scope（如 schedule）時 fallback 為匿名身分，不是 null —— null 在 Directus 是 system、繞過全部 ACL
+// 故用 AsyncLocalStorage 帶 per-event scope
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 

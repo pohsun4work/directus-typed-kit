@@ -6,8 +6,7 @@ import type { Knex } from 'knex'
 
 type Collection<S extends SchemaShape> = keyof S & string
 
-/** 消費端覆寫某張表的 knex row 型別（module augmentation）\
- *  給「不在 Schema 的自訂 raw 表」用 —— 系統表由 generator 適配器灌進 Schema，走一般路徑即 typed
+/** 覆寫某張表的 knex row 型別，給不在 Schema 的表（自訂 raw 表、要 typed 的 `directus_*`）用
  *  ```
  *  declare module 'directus-typed-kit' {
  *    interface KnexOverrides { my_raw_table: { id: string, payload: unknown } }
@@ -18,25 +17,21 @@ export interface KnexOverrides {}
 
 type KnexTableName<S> = (keyof S | keyof KnexOverrides) & string
 
-/** 表名 → knex row：override 優先，否則 Schema 投影成 knex 視角（KnexView 內含 conceal→string、多數日期→Date 但 time 回 string、o2m 欄位移除）\
- *  `& {}` 滿足 Knex.QueryBuilder<TRecord extends {}> 約束（row 恆為物件，交集不改型別）
- */
+/** `& {}` 滿足 Knex.QueryBuilder<TRecord extends {}> 約束（row 恆為物件，交集不改型別） */
 type KnexRow<S, C extends KnexTableName<S>>
   = (C extends keyof KnexOverrides
     ? KnexOverrides[C]
     : C extends keyof S ? KnexView<CollectionItem<S, C & keyof S>> : never) & {}
 
-/** 已知表名（Schema collection / KnexOverrides 登錄表）回 typed QueryBuilder 的 callable */
 type SchemaTable<S> = <C extends KnexTableName<S>>(tableName: C) => Knex.QueryBuilder<KnexRow<S, C>, KnexRow<S, C>[]>
 
-/** Schema 綁定的 knex：把 Schema-aware 簽章插在 Knex 既有 callable 之前\
- *  （intersection＝overload 集合、前者優先）→ `knex('files')` 直接 typed，免消費端 augment\
- *  全域 knex/types/tables，raw / transaction / schema 等其餘介面原樣保留
+/** Schema-aware 簽章插在 Knex 既有 callable 之前（intersection＝overload 集合、前者優先），\
+ *  `knex('files')` 即 typed、免消費端 augment 全域 knex/types/tables
  */
 export type SchemaKnex<S> = SchemaTable<S> & Knex
 
-/** 交易版 SchemaKnex，另保留 Knex.Transaction 的 commit / rollback / savepoint\
- *  原生 `knex.transaction` 回的 `Knex.Transaction` 沒有那條 overload，交易體整條查詢鏈會塌成 any
+/** 原生 `knex.transaction` 回的 `Knex.Transaction` 沒有 Schema-aware 那條 overload，\
+ *  交易體整條查詢鏈會塌成 any
  */
 export type SchemaTrx<S> = SchemaTable<S> & Knex.Transaction
 
@@ -46,25 +41,27 @@ export type ServiceCtor<T> = new (options: {
   knex: Knex;
 }) => T
 
+export interface GetSchemaOptions {
+  database?: Knex;
+  bypassCache?: boolean;
+}
+
 export interface DataAccess<S extends SchemaShape> {
-  /** 某 collection 的 ItemsService —— 完整 typed（read* 依 fields 推結果，含巢狀關聯）\
-   *  身分用 as 指定（預設 caller），同步回傳，schema 在方法呼叫時 lazy 取
-   */
+  /** 同步回傳，schema 在方法呼叫時才 lazy 取（不 stale） */
   items: <C extends Collection<S>>(collection: C, opts?: AccessOptions) => TypedItemsService<S, C>;
-  /** 由 Schema 自動產生的 typed service 工廠集合：
-   *  - `services.FileTagsService({ as })` → TypedItemsService<S, 'file_tags'>（任意 collection）
-   *  - `services.FilesService({ as })` / `services.AssetsService` / `services.UsersService`… → Directus 內建特化 service
-   *
-   *  業務 files / folders 名稱讓位給內建特化 service，其 CRUD 改用 items('files') / items('folders')
+  /** 撞到 Directus 內建 service 保留名的 collection（files / folders…）讓位給內建，\
+   *  其 CRUD 改用 items('files') / items('folders')
    */
   services: ServiceFactories<S>;
-  /** typed 工廠涵蓋不到的 service（如自帶第三方 service）才走這裡，以任意 ctor class 建構、身分同 as */
+  /** typed 工廠涵蓋不到的 service（如自帶第三方 service）才走這裡 */
   service: <T>(ctor: ServiceCtor<T>, opts?: AccessOptions) => Promise<T>;
-  /** Schema 綁定的 raw knex：已知表名（Schema collection / KnexOverrides 登錄表）回 typed QueryBuilder */
   knex: SchemaKnex<S>;
   /** 交易內的 items() / services / knex 存取自動落在同一 trx，巢狀呼叫即開 savepoint\
    *  fn 正常結束即 commit、throw 即 rollback
    */
   transaction: <T>(fn: (trx: SchemaTrx<S>) => Promise<T>) => Promise<T>;
-  getSchema: () => Promise<SchemaOverview>;
+  /** 交易內做過 DDL 後要讓後續讀取看到新表，須自行帶 `{ database: trx, bypassCache: true }` 重取\
+   *  —— items() / services 只在當前 scope 尚未有 schema 時才會重新解析
+   */
+  getSchema: (options?: GetSchemaOptions) => Promise<SchemaOverview>;
 }

@@ -8,6 +8,7 @@ import { isReply, RAW } from './schema-guards.js'
 
 import type { Accountability, Logger, SchemaOverview } from '../core/types.js'
 import type { SchemaShape } from '../data-access/typed-items.js'
+import type { GetSchemaOptions } from '../data-access/types.js'
 import type {
   EndpointTools,
   Guard,
@@ -20,7 +21,7 @@ import type { NextFunction, Request, Response, Router } from 'express'
 interface NativeEndpointContext {
   database: unknown;
   services: Record<string, unknown>;
-  getSchema: () => Promise<SchemaOverview>;
+  getSchema: (options?: GetSchemaOptions) => Promise<SchemaOverview>;
   logger: Logger;
 }
 

@@ -10,7 +10,7 @@ import { applyFilterMiddleware } from './middleware.js'
 
 import type { Accountability, Logger, SchemaOverview } from '../core/types.js'
 import type { SchemaShape } from '../data-access/typed-items.js'
-import type { SchemaKnex } from '../data-access/types.js'
+import type { GetSchemaOptions, SchemaKnex } from '../data-access/types.js'
 import type {
   ActionHandler,
   ActionMeta,
@@ -50,7 +50,7 @@ interface NativeFilterEvents {
 interface NativeHookContext {
   database: unknown;
   services: Record<string, unknown>;
-  getSchema: () => Promise<SchemaOverview>;
+  getSchema: (options?: GetSchemaOptions) => Promise<SchemaOverview>;
   logger: Logger;
 }
 

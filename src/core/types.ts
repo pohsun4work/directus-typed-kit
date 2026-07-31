@@ -9,7 +9,6 @@ export type Identity = 'admin' | 'system' | 'caller'
 /** runtime metadata，row 型別來自 Schema[C]，此處佔位由 data-access 在邊界 cast */
 export type SchemaOverview = unknown
 
-/** 宿主（Directus/pino）注入的 logger，沿用 pino 的 `(obj, msg)` 與 `(msg)` 兩種呼叫形式 */
 export interface LogFn {
   (obj: unknown, msg?: string): void;
   (msg: string): void;

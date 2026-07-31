@@ -20,7 +20,7 @@ export type {
   WriteOptions,
   WritePayload,
 } from './data-access/typed-items.js'
-export type { DataAccess, KnexOverrides, SchemaKnex, SchemaTrx, ServiceCtor } from './data-access/types.js'
+export type { DataAccess, GetSchemaOptions, KnexOverrides, SchemaKnex, SchemaTrx, ServiceCtor } from './data-access/types.js'
 
 export { body, createEndpoint, params, query, RAW, reply } from './endpoint/index.js'
 export type { EndpointTools, Guard, Reply, RequestGuard, RouteContext } from './endpoint/types.js'

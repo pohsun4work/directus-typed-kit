@@ -1,21 +1,17 @@
-// DataAccess 的 runtime 實作
-// 執行身分收斂在 resolveAccountability（as 各值語義見 core/types 的 Identity）
-// items() / services 同步回傳 lazy proxy，schema 折進本就 await 的方法裡 lazy 取、不 stale
-
 import { contextStore } from '../core/context.js'
 import { collectionToServiceKey, serviceKeyToCollection, SPECIAL_SERVICE_NAMES } from './directus-services.js'
 
 import type { Accountability, Logger, SchemaOverview } from '../core/types.js'
 import type { AccessOptions, ServiceAs, ServiceFactories } from './directus-services.js'
 import type { SchemaShape } from './typed-items.js'
-import type { DataAccess, SchemaKnex, SchemaTrx, ServiceCtor } from './types.js'
+import type { DataAccess, GetSchemaOptions, SchemaKnex, SchemaTrx, ServiceCtor } from './types.js'
 import type { Knex } from 'knex'
 
 interface DataAccessDeps {
   knex: Knex;
   /** Directus 注入的 services 容器（含 ItemsService / FilesService…） */
   services: Record<string, unknown>;
-  getSchema: () => Promise<SchemaOverview>;
+  getSchema: (options?: GetSchemaOptions) => Promise<SchemaOverview>;
   logger: Logger;
 }
 
@@ -32,12 +28,11 @@ const LAZY_PROBE_FALLBACK = {
 export function createDataAccess<S extends SchemaShape>(deps: DataAccessDeps): DataAccess<S> {
   const { knex, services: injected, getSchema, logger } = deps
 
-  // 合成身分的預設底：admin 預設 false，要繞 ACL 須顯式給 true 避免手滑誤繞權限
+  // admin 預設 false：要繞 ACL 須顯式給 true，避免手滑誤繞權限
   // 無 request 來源故 roles / ip 為空
   const ANON_BASE: Accountability = { user: null, role: null, roles: [], admin: false, app: false, ip: null }
 
   const resolveAccountability = (as: ServiceAs): Accountability | null => {
-    // 物件形式吃 Partial：補滿必填欄，呼叫端只給關心的欄位（如 { admin: true, user }）
     if (typeof as !== 'string')
       return { ...ANON_BASE, ...as }
     switch (as) {
@@ -55,12 +50,16 @@ export function createDataAccess<S extends SchemaShape>(deps: DataAccessDeps): D
     }
   }
 
-  // hook 走 event context 的 schema（已就緒、不 stale），endpoint / schedule 無則 await getSchema()
   const resolveSchema = async (): Promise<SchemaOverview> => {
     const scope = contextStore.getStore()
     if (scope?.schema)
       return scope.schema
-    const schema = await getSchema()
+    // 有交易就拿它讀 directus_collections / directus_fields：全域連線看不到本交易內未 commit 的
+    // DDL，還可能等在本交易鎖住的 row 上
+    // 不連 bypassCache 一起給：那會讓每個交易都重掃一次全 schema，而交易內 DDL 是罕見情境，
+    // 需要時由呼叫端顯式 getSchema({ database: trx, bypassCache: true })
+    const trx = scope?.knex
+    const schema = await getSchema(trx ? { database: trx } : undefined)
     // 回填 scope：endpoint 一個 handler 內多次 items() 否則每次都重跑 getSchema()
     if (scope)
       scope.schema = schema
@@ -70,7 +69,6 @@ export function createDataAccess<S extends SchemaShape>(deps: DataAccessDeps): D
   // 在方法呼叫時才解析（同 resolveSchema），註冊期取會錯過之後才進的 transaction scope
   const resolveKnex = (trx?: Knex): Knex => trx ?? contextStore.getStore()?.knex ?? knex
 
-  // 共用 lazy proxy：方法被呼叫（皆 async）時才取 schema、由 build() 建構底層 service 實例
   const lazyService = (
     build: (schema: SchemaOverview, accountability: Accountability | null) => AnyMethods,
     as: ServiceAs,
@@ -95,7 +93,6 @@ export function createDataAccess<S extends SchemaShape>(deps: DataAccessDeps): D
       },
     })
 
-  // ctor 簽章斷言集中一次：newItemsService 與 servicesProxy 共用
   const ItemsService = injected.ItemsService as new (
     collection: string,
     options: { knex: Knex; accountability: Accountability | null; schema: SchemaOverview },
@@ -130,9 +127,6 @@ export function createDataAccess<S extends SchemaShape>(deps: DataAccessDeps): D
     }
   }
 
-  // services.XxxService({ as }) 工廠 proxy：
-  //   - 保留名（FilesService / AssetsService…）→ 用真實注入的同名 class 建構（不帶 collection）
-  //   - 其餘 → 由工廠名反推 collection、走 ItemsService(collection)
   const servicesProxy = new Proxy({} as Record<string, unknown>, {
     get(_target, key) {
       if (typeof key !== 'string')
@@ -147,7 +141,6 @@ export function createDataAccess<S extends SchemaShape>(deps: DataAccessDeps): D
               throw new Error(`directus-typed-kit: Directus service "${key}" is not available in this context`)
             return new Ctor({ knex: resolveKnex(opts?.trx), accountability, schema })
           }
-          // 拿 schema 真實 collection 名做無損反推（Pascal 吃掉的底線 regex 補不回）
           const collections = (schema as { collections?: Record<string, unknown> }).collections
           return newItemsService(
             serviceKeyToCollection(key, collections && Object.keys(collections)),
