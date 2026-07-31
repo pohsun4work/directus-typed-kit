@@ -301,6 +301,21 @@ describe('json 欄位（純物件、無 FK 那半 → 非關聯，兩視角都�
   })
 })
 
+// any 對每道 Extract 都算出 any，不特別擋就會被判成 conceal（讀取視角整欄消失）或關聯
+describe('Schema 寫 any 的欄位（兩視角都原樣保留、不靜默消失）', () => {
+  interface AnySchema { rows: { id: string; loose: any; keep: string }[] }
+
+  it('service 讀取視角保留該欄', async () => {
+    const rows = {} as TypedItemsService<AnySchema, 'rows'>
+    const [r] = await rows.readByQuery({})
+    expectTypeOf(r!).toEqualTypeOf<{ id: string; loose: any; keep: string }>()
+  })
+
+  it('knex 視角保留該欄（不被收成 string）', () => {
+    expectTypeOf<KnexView<{ id: string; loose: any }>>().toEqualTypeOf<{ id: string; loose: any }>()
+  })
+})
+
 describe('conceal 欄位的讀寫兩視角', () => {
   it('寫入視角保留欄位並脫 brand（建帳號要給 password，遮蔽只發生在讀取）', () => {
     type Payload = Parameters<typeof files.createOne>[0]

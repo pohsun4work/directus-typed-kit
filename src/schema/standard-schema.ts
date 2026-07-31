@@ -1,18 +1,11 @@
-// kit 只依賴 Standard Schema 規範介面（@standard-schema/spec）
-
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 export type { StandardSchemaV1 } from '@standard-schema/spec'
 
-/** 從 Standard Schema 取出 output 型別，body()/query() 推導 handler ctx 用\
- *  刻意不約束型別參數，呼叫端（SchemaGuardOutput）的型別參數本身未約束，套約束會連鎖報錯
- */
+/** 刻意不約束型別參數：呼叫端（SchemaGuardOutput）的型別參數本身未約束，套約束會連鎖報錯 */
 export type InferOutput<Sc> = Sc extends StandardSchemaV1<unknown, infer O> ? O : never
 
-/** 跑一次 Standard Schema 驗證，回 discriminated result，由呼叫端決定錯誤狀態碼
- *  - hook validate / endpoint body → 400
- *  - response 契約 → 500
- */
+/** 不自行 throw，錯誤狀態碼由呼叫端決定（請求側 400、response 契約 500） */
 export async function runStandard<Sc extends StandardSchemaV1>(
   schema: Sc,
   value: unknown,

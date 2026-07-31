@@ -2,16 +2,20 @@
 //  - service → 遮蔽字串 '**********'（非真值）
 //  - knex    → 真值
 
-/** conceal 欄位 brand 載體，runtime 不存在，conceal 欄位恆為 string 故不帶型別參數 */
+/** brand 載體，runtime 不存在 */
 export type Concealed = string & { readonly __directusConceal: true }
 
-/** 某欄位型別是否含 conceal brand，聯集任一成員帶 brand 即是，剝 null 後判斷 */
-export type IsConcealed<T> = [Extract<NonNullable<T>, { readonly __directusConceal: true }>] extends [never]
+/** `0 extends 1 & T` 先擋 any：`Extract<any, Brand>` 算出 any、過不了 `[…] extends [never]`，\
+ *  不擋則 Schema 寫 `field: any` 的欄位被判成 conceal、從讀取視角靜默消失
+ */
+export type IsConcealed<T> = 0 extends 1 & T
   ? false
-  : true
+  : [Extract<NonNullable<T>, { readonly __directusConceal: true }>] extends [never]
+      ? false
+      : true
 
-/** service 視角移除 conceal 欄位，型別上擋掉逼呼叫端改走 raw knex 取真值 */
+/** 型別上擋掉，逼呼叫端改走 raw knex 取真值 */
 export type OmitConcealed<Row> = { [K in keyof Row as IsConcealed<Row[K]> extends true ? never : K]: Row[K] }
 
-/** 寫入方向剝 conceal brand：遮蔽只發生在讀取，寫進去的恆是明文 string（hook 雜湊密碼即靠這條） */
+/** 遮蔽只發生在讀取，寫進去的恆是明文 string（hook 雜湊密碼即靠這條） */
 export type StripConceal<T> = T extends { readonly __directusConceal: true } ? string : T
