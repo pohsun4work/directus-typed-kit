@@ -105,7 +105,7 @@ route + guards，回傳值即 response：
 import { body, createEndpoint, reply } from 'directus-typed-kit/endpoint'
 
 export const shareEndpoint = createEndpoint(({ route, knex }) => {
-  // guard 回傳物件會 merge 進 ctx 且型別累加：handler 拿到 typed ctx.link
+  // guard 回傳物件會 merge 進 ctx 且型別累加（同名欄位由 guard 覆寫）：handler 拿到 typed ctx.link
   route.get('/:token', { guards: [loadLinkGuard] }, async ({ link }) => loadMetadata(knex, link))
 
   route.post('/:token/auth', { guards: [loadLinkGuard, body(AuthBody)] }, async ({ body, link }) => {

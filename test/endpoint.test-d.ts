@@ -1,7 +1,7 @@
 // endpoint domain 型別測試（vitest --typecheck）：guard 回傳物件 merge 進 handler ctx（型別累加）、
 // guard ctx 自帶 DataAccess（寫在外部模組的 guard 也能查資料）
 
-import { body, RAW, reply } from 'directus-typed-kit'
+import { body, params, RAW, reply } from 'directus-typed-kit'
 import { describe, expectTypeOf, it } from 'vitest'
 
 import type {
@@ -48,6 +48,26 @@ describe('guard ctx 自帶 DataAccess', () => {
       expectTypeOf(ctx.item).toEqualTypeOf<{ id: string }>()
       // handler ctx 同樣自帶存取器
       expectTypeOf(ctx.items('items')).toEqualTypeOf<TypedItemsService<Schema, 'items'>>()
+    })
+  })
+})
+
+describe('guard extras 覆寫基底 ctx 欄位', () => {
+  const tools = {} as EndpointTools<Schema>
+
+  it('params() 驗過後 ctx.params 收斂為 schema output，不再留 index signature', () => {
+    const schema = {} as StandardSchemaV1<unknown, { n: number }>
+    tools.route.get('/:n', { guards: [params(schema)] }, (ctx) => {
+      expectTypeOf(ctx.params).toEqualTypeOf<{ n: number }>()
+      // @ts-expect-error 與基底交集的話，這裡會被 Record<string, string> 接受成 string
+      void ctx.params.nope
+    })
+  })
+
+  it('未被 extras 蓋掉的欄位維持基底型別', () => {
+    tools.route.get('/x', { guards: [async () => ({ who: 'me' as const })] }, (ctx) => {
+      expectTypeOf(ctx.params).toEqualTypeOf<Record<string, string>>()
+      expectTypeOf(ctx.who).toEqualTypeOf<'me'>()
     })
   })
 })

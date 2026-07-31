@@ -66,11 +66,17 @@ type RouteReturn<R>
     ? RouteResult
     : InferOutput<R> | Reply<InferOutput<R>> | symbol
 
+/** extras 覆寫基底、不與之交集：`params` 基底是 `Record<string, string>`，交集的話 `params()` 驗過\
+ *  之後 `ctx.params.任意亂寫` 仍被 index signature 接受成 string，收斂效果等於沒有
+ */
+type HandlerContext<S extends SchemaShape, G extends readonly unknown[]>
+  = Omit<RouteContext<S>, keyof MergeExtras<G>> & MergeExtras<G>
+
 export interface Route<S extends SchemaShape = RegisteredSchema> {
   <const G extends readonly Guard<object, S>[], R extends StandardSchemaV1 = never>(
     path: string,
     options: RouteOptions<G, R>,
-    handler: (ctx: RouteContext<S> & MergeExtras<G>) => RouteReturn<R> | Promise<RouteReturn<R>>,
+    handler: (ctx: HandlerContext<S, G>) => RouteReturn<R> | Promise<RouteReturn<R>>,
   ): void;
   (path: string, handler: (ctx: RouteContext<S>) => RouteResult | Promise<RouteResult>): void;
 }
